@@ -130,5 +130,32 @@ export interface LearnerState {
   lastTopicId: string | null;
 }
 
-export { buildTrace, stateFromTrace, nextStep, DEFAULT_EXAMPLE } from './visual.js';
-export type { SlidingWindowVisualState, VisualStep } from './visual.js';
+export {
+  buildTrace,
+  stateFromTrace,
+  nextStep,
+  findStep,
+  totalSteps,
+  conceptHasVisual,
+  DEFAULT_EXAMPLE
+} from './visual.js';
+export type { SlidingWindowVisualState, VisualStep, WindowPosition } from './visual.js';
+
+export interface TopicSummary {
+  id: string;
+  name: string;
+  goal: string;
+  createdAt: string;
+  concepts: { concept: string; understanding: number; nextReview: string | null }[];
+  sessions: SessionSummary[];
+}
+
+export interface SessionSummary {
+  id: string;
+  topicId: string;
+  startedAt: string;
+  lastInteractionAt: string;
+  mode: TutorMode;
+  currentConcept: string;
+  messageCount: number;
+}

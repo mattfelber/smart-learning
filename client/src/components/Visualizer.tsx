@@ -16,10 +16,30 @@ export function Visualizer({ visualState }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   const lastStep = trace.length - 1;
+  // Where the tutor is; distinct from where you are looking.
+  const tutorStep = Math.max(0, Math.min(lastStep, visualState.stepIndex));
+
+  // Follow the tutor only while you haven't taken manual control. Scrubbing or
+  // playing detaches the view so an incoming reply can't yank it away
+  // mid-exploration.
+  const [following, setFollowing] = useState(true);
 
   useEffect(() => {
-    setDisplayStep(visualState.stepIndex);
-  }, [visualState.stepIndex]);
+    if (following) setDisplayStep(tutorStep);
+  }, [tutorStep, following]);
+
+  const detached = displayStep !== tutorStep;
+
+  function takeControl(next: number) {
+    setFollowing(false);
+    setDisplayStep(Math.max(0, Math.min(lastStep, next)));
+  }
+
+  function resync() {
+    setPlaying(false);
+    setFollowing(true);
+    setDisplayStep(tutorStep);
+  }
 
   useEffect(() => {
     if (!playing) return;
@@ -43,6 +63,7 @@ export function Visualizer({ visualState }: Props) {
   const step = useCallback(
     (delta: number) => {
       setPlaying(false);
+      setFollowing(false);
       setDisplayStep((s) => Math.max(0, Math.min(lastStep, s + delta)));
     },
     [lastStep]
@@ -66,6 +87,7 @@ export function Visualizer({ visualState }: Props) {
   const bestSize = current.bestRight < 0 ? 0 : current.bestRight - current.bestLeft + 1;
   const overBudget = current.zeroCount > current.k;
   const pct = lastStep > 0 ? (displayStep / lastStep) * 100 : 0;
+  const tutorPct = lastStep > 0 ? (tutorStep / lastStep) * 100 : 0;
 
   return (
     <div
@@ -79,6 +101,13 @@ export function Visualizer({ visualState }: Props) {
       <div className="panel__head">
         <span className="panel__title">sliding_window.trace</span>
         <span className="panel__spacer" />
+        {detached ? (
+          <button className="chip chip--amber chip--btn" onClick={resync}>
+            previewing · tutor at {tutorStep} ⟲ resync
+          </button>
+        ) : (
+          <span className="chip chip--lime">following tutor</span>
+        )}
         <span className={`chip ${current.phase === 'done' ? 'chip--lime' : 'chip--cyan'}`}>
           {current.phase}
         </span>
@@ -143,18 +172,25 @@ export function Visualizer({ visualState }: Props) {
               <b>{Math.round(pct)}%</b> traced
             </span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={lastStep}
-            value={displayStep}
-            style={{ ['--pct' as string]: `${pct}%` }}
-            onChange={(e) => {
-              setPlaying(false);
-              setDisplayStep(Number(e.target.value));
-            }}
-            aria-label="Scrub through the algorithm trace"
-          />
+          <div className="scrub__track">
+            <input
+              type="range"
+              min={0}
+              max={lastStep}
+              value={displayStep}
+              style={{ ['--pct' as string]: `${pct}%` }}
+              onChange={(e) => {
+                setPlaying(false);
+                takeControl(Number(e.target.value));
+              }}
+              aria-label="Scrub through the algorithm trace"
+            />
+            <span
+              className="scrub__marker"
+              style={{ left: `${tutorPct}%` }}
+              title={`Tutor is at step ${tutorStep}`}
+            />
+          </div>
         </div>
       </div>
 
@@ -163,7 +199,7 @@ export function Visualizer({ visualState }: Props) {
           className="btn btn--icon"
           onClick={() => {
             setPlaying(false);
-            setDisplayStep(0);
+            takeControl(0);
           }}
           disabled={displayStep === 0}
           title="Restart"
@@ -181,6 +217,7 @@ export function Visualizer({ visualState }: Props) {
         <button
           className="btn btn--primary"
           onClick={() => {
+            setFollowing(false);
             if (displayStep >= lastStep) setDisplayStep(0);
             setPlaying((p) => !p);
           }}
@@ -197,6 +234,11 @@ export function Visualizer({ visualState }: Props) {
           ▶
         </button>
         <span className="transport__spacer" />
+        {detached && (
+          <button className="btn btn--ghost-violet" onClick={resync} title="Jump back to the tutor">
+            ⟲ Tutor
+          </button>
+        )}
         <button
           className="btn btn--icon"
           onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}

@@ -10,7 +10,8 @@ export interface PromptContext {
   recentMessages: { role: string; content: string }[];
   learnerInput: string;
   hintLevel: number;
-  currentVisualText: string;
+  /** Null when the current concept has no visualization. */
+  currentVisualText: string | null;
 }
 
 function formatConceptState(state: ConceptState): string {
@@ -25,6 +26,8 @@ function formatMessages(messages: { role: string; content: string }[]): string {
 }
 
 export function tutorPrompt(ctx: PromptContext): string {
+  const visual = ctx.currentVisualText;
+
   return `${PERSONA}
 
 Learning goal: ${ctx.goal}
@@ -32,7 +35,11 @@ Current mode: ${ctx.mode}
 Current concept: ${ctx.concept}
 Concept state: ${formatConceptState(ctx.conceptState)}
 Hint level: ${ctx.hintLevel}
-Current visual state: ${ctx.currentVisualText}
+${
+  visual
+    ? `Current visual state: ${visual}`
+    : 'There is no visualization for this concept. Teach with words and small examples only.'
+}
 
 Recent conversation:
 ${formatMessages(ctx.recentMessages)}
@@ -49,7 +56,8 @@ Respond in JSON exactly like this:
   "confidenceAsk": false,
   "advanceVisual": false,
   "needsHint": false,
-  "nextReview": null
+  "nextReview": null,
+  "window": ${visual ? '{ "left": 0, "right": 0, "zeroCount": 0 }' : 'null'}
 }
 
 Rules:
@@ -59,12 +67,19 @@ Rules:
 - In PREDICTING mode, describe the current visual state and ask what the next step should be before revealing.
 - In PRACTICING mode, give a small problem and offer a hint if the learner is stuck.
 - In REVIEWING mode, summarize and schedule the next review.
-- Detect known sliding window misconceptions: shrinks window too early, believes window size must remain constant, moves left every iteration, forgets right expands first, confuses current window size with maximum size, fails to update zero count when left passes a zero.
+- "concept" must name the concept you are actually teaching, as a short kebab-case slug. Change it when you move on.
+- Never answer with "orientation" as the concept; it is only a placeholder. Replace it with the real concept implied by the learning goal.
 - If you detect a misconception, include its exact name in "misconceptions".
 - "correct" is your evaluation of the learner's last answer. Use true/false if there is an answer to evaluate, otherwise null (e.g. when probing or explaining).
-- "advanceVisual" should be true when you want the sliding-window visual to move to the next algorithm step.
 - If the learner is stuck, set "needsHint" to true and include a brief hint matching the current hint level in your message.
 - "confidenceAsk" should be true only occasionally when the learner gives an answer.
+${
+  visual
+    ? `- IMPORTANT: set "window" to the exact left, right and zeroCount your message is describing. The visual is rendered from it, so it must match your words. If you walk the learner forward several steps, report the position you end on. Never leave it at a position you are no longer discussing.
+- "advanceVisual" is a fallback only; prefer "window".
+- Detect known sliding window misconceptions: shrinks window too early, believes window size must remain constant, moves left every iteration, forgets right expands first, confuses current window size with maximum size, fails to update zero count when left passes a zero.`
+    : '- Set "window" to null and "advanceVisual" to false; this concept has no visual.'
+}
 `;
 }
 

@@ -133,3 +133,60 @@ export function nextStep(nums: number[], k: number, stepIndex: number): number {
   const trace = buildTrace(nums, k);
   return Math.min(stepIndex + 1, trace.length - 1);
 }
+
+export interface WindowPosition {
+  left: number;
+  right: number;
+  zeroCount: number;
+}
+
+/**
+ * Map a window position the tutor is talking about back onto the trace.
+ *
+ * The tutor narrates several algorithm steps per turn, so a counter that only
+ * ticks forward one step at a time drifts behind the conversation. Resolving
+ * the step from the described window instead keeps the two in lockstep and lets
+ * the visual recover from any earlier drift.
+ *
+ * Prefers an exact (left, right, zeroCount) match, taking the latest one since
+ * consecutive entries can share a position (a shrink and the validity check
+ * that follows it). Falls back to the closest entry by Manhattan distance.
+ */
+export function findStep(nums: number[], k: number, target: WindowPosition): number {
+  const trace = buildTrace(nums, k);
+
+  for (let i = trace.length - 1; i >= 0; i--) {
+    const s = trace[i];
+    if (s.left === target.left && s.right === target.right && s.zeroCount === target.zeroCount) {
+      return i;
+    }
+  }
+
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < trace.length; i++) {
+    const s = trace[i];
+    const distance =
+      Math.abs(s.left - target.left) +
+      Math.abs(s.right - target.right) +
+      Math.abs(s.zeroCount - target.zeroCount);
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  return best;
+}
+
+export function totalSteps(nums: number[], k: number): number {
+  return buildTrace(nums, k).length;
+}
+
+/**
+ * The sliding-window trace is the only visualization that exists, so a concept
+ * only gets a visual panel when it actually is that concept. Models name it
+ * loosely ("sliding-window", "sliding window basics"), hence the pattern.
+ */
+export function conceptHasVisual(concept: string): boolean {
+  return /sliding[\s_-]?window/i.test(concept);
+}

@@ -9,7 +9,9 @@ import type {
   SessionState,
   LearningEvent,
   ConceptState,
-  TutorMessage
+  TutorMessage,
+  SessionSummary,
+  TopicSummary
 } from '@smart-learning/shared';
 import { config } from '../config.js';
 
@@ -32,9 +34,17 @@ function ensureDir(path: string): void {
 function loadJson<T>(path: string, fallback: T): T {
   if (!existsSync(path)) return fallback;
   try {
-    const content = readFileSync(path, 'utf-8');
+    // Strip a UTF-8 BOM: editors and some shells add one, and JSON.parse rejects it.
+    const content = readFileSync(path, 'utf-8').replace(/^\uFEFF/, '');
     return JSON.parse(content) as T;
-  } catch {
+  } catch (err) {
+    // Falling back silently here means a corrupt file looks like a fresh start
+    // and then gets overwritten with empty state. Make that loud.
+    console.error(
+      `[store] Could not parse ${path}; falling back to empty state. ` +
+        `Existing data in this file will be overwritten on the next save.`,
+      err
+    );
     return fallback;
   }
 }
@@ -117,15 +127,29 @@ export class Store {
     );
   }
 
+  /**
+   * Topic ids are derived from the goal, so re-entering a goal resolves to an
+   * existing topic. Return that topic instead of overwriting it — a fresh
+   * TopicState would discard every concept score, evidence entry and
+   * misconception recorded against it.
+   */
   createTopic(goal: string, name: string): TopicState {
     const id = slugify(name);
+    const existing = this.loadTopic(id);
+    if (existing) {
+      existing.goal = goal;
+      existing.name = name;
+      this.saveTopic(existing);
+      return existing;
+    }
     const topic: TopicState = {
       id,
       name,
       goal,
       createdAt: now(),
       concepts: {},
-      currentConcept: 'sliding-window',
+      // The tutor names the real concept on its first reply; don't presume one.
+      currentConcept: 'orientation',
       activeSessionId: null
     };
     this.saveTopic(topic);
@@ -170,7 +194,7 @@ export class Store {
     saveJson(this.sessionMetadataFile(session.id), session);
   }
 
-  listSessions(): { id: string; topicId: string; startedAt: string; mode: string }[] {
+  listSessions(): SessionSummary[] {
     const sessionsDir = resolve(this.dataDir, 'sessions');
     if (!existsSync(sessionsDir)) return [];
     const dirs = readdirSyncSafe(sessionsDir);
@@ -178,10 +202,48 @@ export class Store {
       .map((id) => {
         const s = this.loadSession(id);
         return s
-          ? { id: s.id, topicId: s.topicId, startedAt: s.startedAt, mode: s.mode }
+          ? {
+              id: s.id,
+              topicId: s.topicId,
+              startedAt: s.startedAt,
+              lastInteractionAt: s.lastInteractionAt ?? s.startedAt,
+              mode: s.mode,
+              currentConcept: s.currentConcept,
+              messageCount: s.messages.filter((m) => m.role !== 'system').length
+            }
           : null;
       })
-      .filter((s): s is NonNullable<typeof s> => Boolean(s));
+      .filter((s): s is SessionSummary => Boolean(s))
+      .sort(
+        (a, b) =>
+          new Date(b.lastInteractionAt).getTime() - new Date(a.lastInteractionAt).getTime()
+      );
+  }
+
+  listTopics(): TopicSummary[] {
+    const topicsDir = resolve(this.dataDir, 'topics');
+    if (!existsSync(topicsDir)) return [];
+    const sessions = this.listSessions();
+    return readdirSyncSafe(topicsDir)
+      .map((id) => this.loadTopic(id))
+      .filter((t): t is TopicState => Boolean(t))
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        goal: t.goal,
+        createdAt: t.createdAt,
+        concepts: Object.values(t.concepts).map((c) => ({
+          concept: c.concept,
+          understanding: c.understanding,
+          nextReview: c.nextReview
+        })),
+        sessions: sessions.filter((s) => s.topicId === t.id)
+      }))
+      .sort((a, b) => {
+        const aLast = a.sessions[0]?.lastInteractionAt ?? a.createdAt;
+        const bLast = b.sessions[0]?.lastInteractionAt ?? b.createdAt;
+        return new Date(bLast).getTime() - new Date(aLast).getTime();
+      });
   }
 
   appendEvent(sessionId: string, type: string, detail: unknown = {}): void {

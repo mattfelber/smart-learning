@@ -112,5 +112,50 @@ export function createRoutes(tutor: Tutor, store: Store, configured: boolean, co
     })
   );
 
+  router.get(
+    '/topics',
+    asyncHandler(async (_req, res) => {
+      res.json(store.listTopics());
+    })
+  );
+
+  /** Rehydrate a past transcript without spending an LLM call. */
+  router.get(
+    '/session/:id',
+    asyncHandler(async (req, res) => {
+      const session = tutor.getTranscript(req.params.id);
+      if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      res.json(session);
+    })
+  );
+
+  /** Reopen a specific past session and get a fresh orienting turn. */
+  router.post(
+    '/open',
+    asyncHandler(async (req, res) => {
+      if (!configured) {
+        res.json({
+          message: configError ?? 'Gemini is not configured.',
+          needsConfig: true
+        });
+        return;
+      }
+      const { sessionId } = req.body;
+      if (!sessionId || typeof sessionId !== 'string') {
+        res.status(400).json({ error: 'sessionId is required' });
+        return;
+      }
+      const result = await tutor.openSession(sessionId);
+      if (!result) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      res.json(result);
+    })
+  );
+
   return router;
 }

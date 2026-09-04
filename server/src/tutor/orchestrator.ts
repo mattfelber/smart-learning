@@ -11,7 +11,13 @@ import type {
 import { Store } from '../persistence/store.js';
 import type { LLMProvider } from '../providers/types.js';
 import { tutorPrompt, summaryPrompt } from './prompts.js';
-import { stateFromTrace, nextStep, DEFAULT_EXAMPLE } from '@smart-learning/shared';
+import {
+  stateFromTrace,
+  nextStep,
+  findStep,
+  conceptHasVisual,
+  DEFAULT_EXAMPLE
+} from '@smart-learning/shared';
 
 const TutorOutputSchema = z.object({
   message: z.string(),
@@ -22,7 +28,17 @@ const TutorOutputSchema = z.object({
   confidenceAsk: z.boolean().default(false),
   advanceVisual: z.boolean().default(false),
   needsHint: z.boolean().default(false),
-  nextReview: z.string().nullable().default(null)
+  nextReview: z.string().nullable().default(null),
+  // The window the tutor's message is actually describing. Authoritative when
+  // present; `advanceVisual` is the fallback for models that omit it.
+  window: z
+    .object({
+      left: z.number().int(),
+      right: z.number().int(),
+      zeroCount: z.number().int()
+    })
+    .nullable()
+    .default(null)
 });
 
 type TutorOutput = z.infer<typeof TutorOutputSchema>;
@@ -42,7 +58,7 @@ export class Tutor {
 
   async startTopic(goal: string): Promise<TutorResponse & { sessionId: string }> {
     const topic = this.store.createTopic(goal, goal);
-    const session = this.store.createSession(topic.id, 'sliding-window');
+    const session = this.store.createSession(topic.id, topic.currentConcept);
     session.visualStep = 0;
     topic.activeSessionId = session.id;
     this.store.saveTopic(topic);
@@ -95,6 +111,35 @@ export class Tutor {
     );
   }
 
+  /** Reopen a specific past session, whether or not it was ended. */
+  async openSession(sessionId: string): Promise<(TutorResponse & { sessionId: string }) | null> {
+    const session = this.store.loadSession(sessionId);
+    if (!session) return null;
+    const topic = this.store.loadTopic(session.topicId);
+    if (!topic) return null;
+
+    session.resumedAt = now();
+    if (session.mode === 'DONE') {
+      session.mode = 'REVIEWING';
+      delete session.endedAt;
+    }
+    this.store.saveSession(session);
+    topic.activeSessionId = session.id;
+    this.store.saveTopic(topic);
+    this.store.appendEvent(session.id, 'SESSION_RESUMED', { sessionId: session.id });
+
+    return this.tutorTurn(
+      session,
+      topic,
+      "I'm back. Briefly summarize where we left off and what the next step should be."
+    );
+  }
+
+  /** The transcript of a past session, for rehydrating the UI without an LLM call. */
+  getTranscript(sessionId: string): SessionState | null {
+    return this.store.loadSession(sessionId);
+  }
+
   async endSession(sessionId: string): Promise<string> {
     const session = this.store.loadSession(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -127,8 +172,11 @@ export class Tutor {
     const conceptState = this.store.ensureConcept(topic.id, concept);
 
     const visualStep = session.visualStep ?? 0;
+    const conceptVisual = conceptHasVisual(concept);
     const visual = stateFromTrace(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, visualStep);
-    const currentVisualText = `left=${visual.left}, right=${visual.right}, zeroCount=${visual.zeroCount}, best=[${visual.bestLeft},${visual.bestRight}], nums=[${DEFAULT_EXAMPLE.nums.join(',')}], k=${DEFAULT_EXAMPLE.k}`;
+    const currentVisualText = conceptVisual
+      ? `left=${visual.left}, right=${visual.right}, zeroCount=${visual.zeroCount}, best=[${visual.bestLeft},${visual.bestRight}], nums=[${DEFAULT_EXAMPLE.nums.join(',')}], k=${DEFAULT_EXAMPLE.k}`
+      : null;
 
     const prompt = tutorPrompt({
       goal,
@@ -146,7 +194,7 @@ export class Tutor {
       responseMimeType: 'application/json',
       maxTokens: 2048
     });
-    const output = this.parseOutput(res.text);
+    const output = this.parseOutput(res.text, concept);
 
     const previousMode = session.mode;
     session.mode = output.mode;
@@ -163,7 +211,11 @@ export class Tutor {
       session.hintLevel = 0;
     }
 
-    if (previousMode === 'PREDICTING' && output.correct === true) {
+    // Resolve the step from the window the tutor described, so the visual
+    // tracks the narration instead of lagging one tick per turn behind it.
+    if (output.window) {
+      session.visualStep = findStep(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, output.window);
+    } else if (previousMode === 'PREDICTING' && output.correct === true) {
       session.visualStep = nextStep(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, visualStep);
     } else if (output.advanceVisual) {
       session.visualStep = nextStep(
@@ -177,11 +229,10 @@ export class Tutor {
       session.visualStep = 0;
     }
 
-    const newVisual = stateFromTrace(
-      DEFAULT_EXAMPLE.nums,
-      DEFAULT_EXAMPLE.k,
-      session.visualStep
-    );
+    const showVisual = conceptHasVisual(output.concept);
+    const newVisual = showVisual
+      ? stateFromTrace(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, session.visualStep)
+      : undefined;
     session.visualState = newVisual;
 
     this.updateConcept(topic, concept, conceptState, output, learnerInput);
@@ -288,7 +339,7 @@ export class Tutor {
     return null;
   }
 
-  private parseOutput(text: string): TutorOutput {
+  private parseOutput(text: string, fallbackConcept: string): TutorOutput {
     const cleaned = text.replace(/^```json\s*|\s*```$/g, '').trim();
     const parsed = this.extractJsonObject(cleaned) ?? this.extractJsonObject(text);
     if (parsed) {
@@ -299,13 +350,14 @@ export class Tutor {
     return {
       message: text,
       mode: 'TEACHING',
-      concept: 'sliding-window',
+      concept: fallbackConcept,
       correct: null,
       misconceptions: [],
       confidenceAsk: false,
       advanceVisual: false,
       needsHint: false,
-      nextReview: null
+      nextReview: null,
+      window: null
     };
   }
 }

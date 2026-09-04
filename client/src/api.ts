@@ -1,4 +1,4 @@
-import type { TutorResponse, SessionState } from '@smart-learning/shared';
+import type { TutorResponse, SessionState, TopicSummary } from '@smart-learning/shared';
 
 export async function health(): Promise<{ ok: boolean; configured: boolean }> {
   const res = await fetch('/api/health');
@@ -33,6 +33,30 @@ export async function resume(): Promise<TutorResponse & { sessionId: string; ava
 
 export async function checkResume(): Promise<{ available: boolean; session?: SessionState }> {
   const res = await fetch('/api/resume');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function listTopics(): Promise<TopicSummary[]> {
+  const res = await fetch('/api/topics');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function openSession(
+  sessionId: string
+): Promise<TutorResponse & { sessionId: string }> {
+  const res = await fetch('/api/open', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTranscript(sessionId: string): Promise<SessionState> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

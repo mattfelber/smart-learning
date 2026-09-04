@@ -3,7 +3,17 @@ import type { SlidingWindowVisualState, TutorResponse } from '@smart-learning/sh
 import { Chat } from './components/Chat.js';
 import { Visualizer } from './components/Visualizer.js';
 import { Markdown } from './components/Markdown.js';
-import { newTopic, chat, resume, endSession, checkResume, health } from './api.js';
+import { Library } from './components/Library.js';
+import {
+  newTopic,
+  chat,
+  resume,
+  endSession,
+  checkResume,
+  health,
+  openSession,
+  getTranscript
+} from './api.js';
 
 interface Message {
   role: 'tutor' | 'learner';
@@ -33,6 +43,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [resumeAvailable, setResumeAvailable] = useState(false);
   const [notes, setNotes] = useState<string>('');
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [vaultVersion, setVaultVersion] = useState(0);
 
   useEffect(() => {
     health().then((h) => {
@@ -41,9 +53,24 @@ export default function App() {
     checkResume().then((r) => setResumeAvailable(r.available));
   }, []);
 
+  /**
+   * Switching to a different topic or session must not leave the previous
+   * transcript, visual or concept on screen — that made a successful switch
+   * look like nothing had happened.
+   */
+  function resetSession() {
+    setMessages([]);
+    setSessionId(null);
+    setVisualState(null);
+    setMode('');
+    setConcept('');
+    setHintLevel(0);
+    setNotes('');
+  }
+
   async function startNew() {
     setLoading(true);
-    setNotes('');
+    resetSession();
     try {
       const res = await newTopic(goalInput);
       applyResponse(res);
@@ -51,6 +78,30 @@ export default function App() {
       handleError(err);
     } finally {
       setLoading(false);
+      setVaultVersion((v) => v + 1);
+    }
+  }
+
+  async function doOpenSession(id: string) {
+    setLibraryOpen(false);
+    setLoading(true);
+    resetSession();
+    try {
+      // Rehydrate the past transcript first so the history is visible, then let
+      // the tutor add an orienting turn on top of it.
+      const past = await getTranscript(id);
+      setMessages(
+        past.messages
+          .filter((m) => m.role !== 'system')
+          .map((m) => ({ role: m.role as 'tutor' | 'learner', content: m.content }))
+      );
+      const res = await openSession(id);
+      applyResponse(res);
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setLoading(false);
+      setVaultVersion((v) => v + 1);
     }
   }
 
@@ -70,7 +121,7 @@ export default function App() {
 
   async function doResume() {
     setLoading(true);
-    setNotes('');
+    resetSession();
     try {
       const res = await resume();
       if (res.available === false) {
@@ -82,6 +133,7 @@ export default function App() {
       handleError(err);
     } finally {
       setLoading(false);
+      setVaultVersion((v) => v + 1);
     }
   }
 
@@ -92,14 +144,17 @@ export default function App() {
       const res = await endSession(sessionId);
       setNotes(res.note);
       setMode('DONE');
+      setVisualState(null);
       setMessages((m) => [
         ...m,
         { role: 'tutor', content: 'Session ended. Notes saved below.' }
       ]);
+      setResumeAvailable(false);
     } catch (err) {
       handleError(err);
     } finally {
       setLoading(false);
+      setVaultVersion((v) => v + 1);
     }
   }
 
@@ -243,6 +298,9 @@ export default function App() {
             ■ End &amp; Notes
           </button>
         )}
+        <button className="btn" onClick={() => setLibraryOpen(true)} disabled={loading}>
+          ☰ Vault
+        </button>
       </div>
 
       <main className={`workspace ${visualState ? 'workspace--split' : ''}`}>
@@ -295,11 +353,20 @@ export default function App() {
           </>
         )}
         <span className="statusbar__right">
+          {concept && <span className="statusbar__item">{concept}</span>}
           <span className="statusbar__item">gemini</span>
           <span className="statusbar__item">utf-8</span>
           <span className="statusbar__item">tsx</span>
         </span>
       </footer>
+
+      <Library
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onOpenSession={doOpenSession}
+        activeSessionId={sessionId}
+        refreshKey={vaultVersion}
+      />
     </div>
   );
 }
