@@ -21,7 +21,12 @@ function loadDotenv(): void {
   for (const line of content.split(/\r?\n/)) {
     const [key, ...rest] = line.split('=');
     if (key && rest.length && !key.startsWith('#')) {
-      process.env[key.trim()] = rest.join('=').trim();
+      const name = key.trim();
+      // A real environment variable wins over the .env file, matching dotenv.
+      // Overwriting it made PORT and DATA_DIR impossible to override per-run.
+      if (process.env[name] === undefined) {
+        process.env[name] = rest.join('=').trim();
+      }
     }
   }
 }

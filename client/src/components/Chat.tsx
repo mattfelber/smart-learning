@@ -9,7 +9,8 @@ interface Message {
 
 interface Props {
   messages: Message[];
-  onSend: (message: string) => void;
+  /** Resolves false when the send failed, so the draft can be handed back. */
+  onSend: (message: string) => Promise<boolean> | void;
   disabled: boolean;
   loading?: boolean;
   hasSession?: boolean;
@@ -47,16 +48,21 @@ export function Chat({
     box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
   }, [input]);
 
-  function submit() {
-    if (!input.trim() || disabled) return;
-    onSend(input.trim());
+  async function submit() {
+    const text = input.trim();
+    if (!text || disabled) return;
+    // Clear optimistically so the bubble appears immediately, but put the text
+    // back if the request failed — losing a long answer to a quota error is
+    // infuriating.
     setInput('');
+    const ok = await onSend(text);
+    if (ok === false) setInput(text);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      submit();
+      void submit();
     }
   }
 
@@ -124,7 +130,7 @@ export function Chat({
         <button
           className="btn btn--primary"
           type="button"
-          onClick={submit}
+          onClick={() => void submit()}
           disabled={disabled || !input.trim()}
         >
           Send ▸

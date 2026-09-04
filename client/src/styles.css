@@ -1330,6 +1330,65 @@ kbd {
 }
 
 /* ==========================================================================
+   Alert banner (quota, overload, config)
+   ========================================================================== */
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  background: linear-gradient(100deg, rgba(255, 198, 92, 0.12), rgba(21, 25, 41, 0.9));
+  border: 1px solid rgba(255, 198, 92, 0.34);
+  border-left: 2px solid var(--neon-amber);
+  border-radius: var(--r-md);
+  animation: rise 0.24s var(--ease) both;
+}
+
+.alert--auth {
+  background: linear-gradient(100deg, rgba(255, 92, 122, 0.12), rgba(21, 25, 41, 0.9));
+  border-color: rgba(255, 92, 122, 0.34);
+  border-left-color: var(--neon-red);
+}
+
+.alert__icon {
+  flex: 0 0 auto;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--neon-amber);
+}
+
+.alert--auth .alert__icon {
+  color: var(--neon-red);
+}
+
+.alert__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert__title {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--neon-amber);
+}
+
+.alert--auth .alert__title {
+  color: var(--neon-red);
+}
+
+.alert__text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+
+/* ==========================================================================
    Vault (topic / session picker)
    ========================================================================== */
 

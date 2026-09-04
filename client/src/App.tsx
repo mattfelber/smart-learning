@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { SlidingWindowVisualState, TutorResponse } from '@smart-learning/shared';
+import type { SessionState, SlidingWindowVisualState, TutorResponse } from '@smart-learning/shared';
+import { conceptHasVisual } from '@smart-learning/shared';
 import { Chat } from './components/Chat.js';
 import { Visualizer } from './components/Visualizer.js';
 import { Markdown } from './components/Markdown.js';
@@ -12,7 +13,8 @@ import {
   checkResume,
   health,
   openSession,
-  getTranscript
+  getTranscript,
+  ApiError
 } from './api.js';
 
 interface Message {
@@ -45,6 +47,15 @@ export default function App() {
   const [notes, setNotes] = useState<string>('');
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [vaultVersion, setVaultVersion] = useState(0);
+  const [alert, setAlert] = useState<{ message: string; kind: string } | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Count down the provider's suggested retry delay so the wait is visible.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   useEffect(() => {
     health().then((h) => {
@@ -66,6 +77,28 @@ export default function App() {
     setConcept('');
     setHintLevel(0);
     setNotes('');
+    setAlert(null);
+  }
+
+  /**
+   * Rebuild the whole UI from a saved session. Free — the transcript, mode,
+   * concept and visual position are all already on disk, so reopening past
+   * work costs no model requests. That matters on the free tier, where the
+   * daily allowance is small.
+   */
+  function hydrateFromSession(s: SessionState) {
+    setSessionId(s.id);
+    setMode(s.mode);
+    setConcept(s.currentConcept);
+    setHintLevel(s.hintLevel ?? 0);
+    setMessages(
+      s.messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ role: m.role as 'tutor' | 'learner', content: m.content }))
+    );
+    // Older sessions stored a sliding-window state even for concepts that have
+    // no visualization, so gate on the concept as well as presence.
+    setVisualState(s.visualState && conceptHasVisual(s.currentConcept) ? s.visualState : null);
   }
 
   async function startNew() {
@@ -82,21 +115,26 @@ export default function App() {
     }
   }
 
+  /** Reopen a past session for free; the tutor is not called. */
   async function doOpenSession(id: string) {
     setLibraryOpen(false);
     setLoading(true);
     resetSession();
     try {
-      // Rehydrate the past transcript first so the history is visible, then let
-      // the tutor add an orienting turn on top of it.
-      const past = await getTranscript(id);
-      setMessages(
-        past.messages
-          .filter((m) => m.role !== 'system')
-          .map((m) => ({ role: m.role as 'tutor' | 'learner', content: m.content }))
-      );
-      const res = await openSession(id);
-      applyResponse(res);
+      hydrateFromSession(await getTranscript(id));
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** Optional, costs one request: ask the tutor to summarise where we left off. */
+  async function doCatchMeUp() {
+    if (!sessionId) return;
+    setLoading(true);
+    try {
+      applyResponse(await openSession(sessionId));
     } catch (err) {
       handleError(err);
     } finally {
@@ -105,35 +143,47 @@ export default function App() {
     }
   }
 
-  async function sendMessage(text: string) {
-    if (!sessionId) return;
+  async function sendMessage(text: string): Promise<boolean> {
+    if (!sessionId) return false;
     setMessages((m) => [...m, { role: 'learner', content: text }]);
     setLoading(true);
     try {
       const res = await chat(sessionId, text);
       appendTutor(res);
+      return true;
     } catch (err) {
+      // Roll the optimistic bubble back out so the composer can hand the text
+      // back instead of the learner having to retype it.
+      setMessages((m) => {
+        const i = m.reduce(
+          (found, msg, idx) =>
+            msg.role === 'learner' && msg.content === text ? idx : found,
+          -1
+        );
+        return i === -1 ? m : [...m.slice(0, i), ...m.slice(i + 1)];
+      });
       handleError(err);
+      return false;
     } finally {
       setLoading(false);
     }
   }
 
+  /** Reopen the latest unfinished session for free. */
   async function doResume() {
     setLoading(true);
     resetSession();
     try {
-      const res = await resume();
-      if (res.available === false) {
+      const res = await checkResume();
+      if (!res.available || !res.session) {
         setResumeAvailable(false);
       } else {
-        applyResponse(res);
+        hydrateFromSession(res.session);
       }
     } catch (err) {
       handleError(err);
     } finally {
       setLoading(false);
-      setVaultVersion((v) => v + 1);
     }
   }
 
@@ -190,6 +240,19 @@ export default function App() {
   }
 
   function handleError(err: unknown) {
+    // Quota and overload are normal operating conditions on the free tier, so
+    // surface them as an actionable banner rather than a fault bubble.
+    if (err instanceof ApiError && err.kind !== 'UNKNOWN') {
+      setAlert({ message: err.message, kind: err.kind });
+      // Only count down when waiting actually helps. The daily cap also
+      // reports a retryDelay, but coming back in 32 seconds changes nothing,
+      // and blocking the composer would just imply otherwise.
+      const waitable = err.kind === 'RATE_LIMIT' || err.kind === 'OVERLOADED';
+      if (waitable && err.retryAfterSeconds && err.retryAfterSeconds <= 600) {
+        setCooldown(err.retryAfterSeconds);
+      }
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     setMessages((m) => [...m, { role: 'tutor', content: `Error: ${msg}`, error: true }]);
   }
@@ -294,6 +357,16 @@ export default function App() {
           </button>
         )}
         {sessionId && (
+          <button
+            className="btn btn--ghost-violet"
+            onClick={doCatchMeUp}
+            disabled={loading || cooldown > 0}
+            title="Ask the tutor to summarise where you left off (uses one request)"
+          >
+            ⤴ Catch me up
+          </button>
+        )}
+        {sessionId && (
           <button className="btn btn--ghost-magenta" onClick={doEnd} disabled={loading}>
             ■ End &amp; Notes
           </button>
@@ -302,6 +375,28 @@ export default function App() {
           ☰ Vault
         </button>
       </div>
+
+      {alert && (
+        <div className={`alert${alert.kind === 'AUTH' ? ' alert--auth' : ''}`} role="status">
+          <span className="alert__icon">{alert.kind === 'OVERLOADED' ? '◴' : '⚠'}</span>
+          <div className="alert__body">
+            <div className="alert__title">
+              {alert.kind === 'RATE_LIMIT_DAILY'
+                ? 'Daily quota reached'
+                : alert.kind === 'RATE_LIMIT'
+                ? 'Slow down'
+                : alert.kind === 'OVERLOADED'
+                ? 'Model busy'
+                : 'Configuration problem'}
+            </div>
+            <div className="alert__text">{alert.message}</div>
+          </div>
+          {cooldown > 0 && <span className="chip chip--amber">retry in {cooldown}s</span>}
+          <button className="btn btn--icon" onClick={() => setAlert(null)} title="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
 
       <main className={`workspace ${visualState ? 'workspace--split' : ''}`}>
         <section className="panel">
@@ -313,7 +408,7 @@ export default function App() {
           <Chat
             messages={messages}
             onSend={sendMessage}
-            disabled={loading || !sessionId}
+            disabled={loading || !sessionId || cooldown > 0}
             loading={loading}
             hasSession={!!sessionId}
           />

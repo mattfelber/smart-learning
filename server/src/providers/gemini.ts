@@ -1,6 +1,7 @@
 import { GoogleGenAI, createUserContent, createModelContent } from '@google/genai';
 import type { GenerateRequest, GenerateResponse } from '@smart-learning/shared';
 import type { LLMProvider } from './types.js';
+import { classifyProviderError } from './errors.js';
 
 export class GeminiProvider implements LLMProvider {
   private client: GoogleGenAI;
@@ -54,7 +55,10 @@ export class GeminiProvider implements LLMProvider {
       }
     }
 
-    throw new Error(`Gemini request failed: ${errors.join('; ')}`);
+    const raw = errors.join('; ');
+    const error = classifyProviderError(raw, this.fallbacks);
+    console.error(`[gemini] ${error.kind}: ${raw}`);
+    throw error;
   }
 
   supportsJson(): boolean {

@@ -2,12 +2,27 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { Tutor } from './tutor/orchestrator.js';
 import { Store } from './persistence/store.js';
+import { ProviderError } from './providers/errors.js';
 
 function asyncHandler(fn: (req: Request, res: Response) => Promise<unknown>) {
   return (req: Request, res: Response) => {
     fn(req, res).catch((err) => {
+      // Provider failures are expected (quota, overload) and carry a message
+      // written for the learner. Everything else is a real bug.
+      if (err instanceof ProviderError) {
+        console.error(`[api] ${err.kind}: ${err.message}`);
+        res.status(err.status).json({
+          error: err.message,
+          kind: err.kind,
+          retryAfterSeconds: err.retryAfterSeconds
+        });
+        return;
+      }
       console.error(err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({
+        error: err instanceof Error ? err.message : String(err),
+        kind: 'UNKNOWN'
+      });
     });
   };
 }
@@ -62,10 +77,9 @@ export function createRoutes(tutor: Tutor, store: Store, configured: boolean, co
   router.get(
     '/resume',
     asyncHandler(async (_req, res) => {
-      const sessions = store.listSessions();
-      const unfinished = sessions
-        .filter((s) => s.mode !== 'DONE')
-        .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+      // listSessions is already ordered by most recent activity, which is a
+      // better notion of "where I was" than the original start time.
+      const unfinished = store.listSessions().filter((s) => s.mode !== 'DONE');
 
       if (!unfinished.length) {
         res.json({ available: false });

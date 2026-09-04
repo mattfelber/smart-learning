@@ -89,10 +89,8 @@ export class Tutor {
   }
 
   async resume(): Promise<(TutorResponse & { sessionId: string }) | null> {
-    const sessions = this.store.listSessions();
-    const latest = sessions
-      .filter((s) => s.mode !== 'DONE')
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+    // Ordered by most recent activity by listSessions.
+    const latest = this.store.listSessions().filter((s) => s.mode !== 'DONE')[0];
 
     if (!latest) return null;
 

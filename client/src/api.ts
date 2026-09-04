@@ -1,72 +1,96 @@
 import type { TutorResponse, SessionState, TopicSummary } from '@smart-learning/shared';
 
-export async function health(): Promise<{ ok: boolean; configured: boolean }> {
-  const res = await fetch('/api/health');
-  return res.json();
+export type ApiErrorKind =
+  | 'RATE_LIMIT_DAILY'
+  | 'RATE_LIMIT'
+  | 'OVERLOADED'
+  | 'AUTH'
+  | 'UNKNOWN';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public kind: ApiErrorKind = 'UNKNOWN',
+    public retryAfterSeconds: number | null = null
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
-export async function newTopic(goal: string): Promise<TutorResponse & { sessionId: string }> {
-  const res = await fetch('/api/new-topic', {
+/**
+ * The server sends `{ error, kind, retryAfterSeconds }`. Reading the raw body
+ * instead dumped several hundred characters of nested Gemini JSON into the
+ * chat, so always go through the structured field.
+ */
+async function unwrap<T>(res: Response): Promise<T> {
+  if (res.ok) return res.json() as Promise<T>;
+
+  const body = await res.text();
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: string;
+      kind?: ApiErrorKind;
+      retryAfterSeconds?: number | null;
+    };
+    throw new ApiError(
+      parsed.error ?? `Request failed (${res.status})`,
+      parsed.kind ?? 'UNKNOWN',
+      parsed.retryAfterSeconds ?? null
+    );
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(body || `Request failed (${res.status})`);
+  }
+}
+
+function post<T>(path: string, body?: unknown): Promise<T> {
+  return fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ goal })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+    body: body === undefined ? undefined : JSON.stringify(body)
+  }).then((r) => unwrap<T>(r));
 }
 
-export async function chat(sessionId: string, message: string): Promise<TutorResponse> {
-  const res = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, message })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function get<T>(path: string): Promise<T> {
+  return fetch(path).then((r) => unwrap<T>(r));
 }
 
-export async function resume(): Promise<TutorResponse & { sessionId: string; available: boolean }> {
-  const res = await fetch('/api/resume', { method: 'POST' });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export function health(): Promise<{ ok: boolean; configured: boolean }> {
+  return get('/api/health');
 }
 
-export async function checkResume(): Promise<{ available: boolean; session?: SessionState }> {
-  const res = await fetch('/api/resume');
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export function newTopic(goal: string): Promise<TutorResponse & { sessionId: string }> {
+  return post('/api/new-topic', { goal });
 }
 
-export async function listTopics(): Promise<TopicSummary[]> {
-  const res = await fetch('/api/topics');
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export function chat(sessionId: string, message: string): Promise<TutorResponse> {
+  return post('/api/chat', { sessionId, message });
 }
 
-export async function openSession(
-  sessionId: string
-): Promise<TutorResponse & { sessionId: string }> {
-  const res = await fetch('/api/open', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+/** Costs one model request. */
+export function resume(): Promise<TutorResponse & { sessionId: string; available: boolean }> {
+  return post('/api/resume');
 }
 
-export async function getTranscript(sessionId: string): Promise<SessionState> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export function checkResume(): Promise<{ available: boolean; session?: SessionState }> {
+  return get('/api/resume');
 }
 
-export async function endSession(sessionId: string): Promise<{ note: string }> {
-  const res = await fetch('/api/end', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export function listTopics(): Promise<TopicSummary[]> {
+  return get('/api/topics');
+}
+
+/** Costs one model request — asks the tutor for a fresh orienting turn. */
+export function openSession(sessionId: string): Promise<TutorResponse & { sessionId: string }> {
+  return post('/api/open', { sessionId });
+}
+
+/** Free: reads the saved transcript, no model request. */
+export function getTranscript(sessionId: string): Promise<SessionState> {
+  return get(`/api/session/${encodeURIComponent(sessionId)}`);
+}
+
+export function endSession(sessionId: string): Promise<{ note: string }> {
+  return post('/api/end', { sessionId });
 }
