@@ -2,12 +2,23 @@ import { useEffect, useState } from 'react';
 import type { SlidingWindowVisualState, TutorResponse } from '@smart-learning/shared';
 import { Chat } from './components/Chat.js';
 import { Visualizer } from './components/Visualizer.js';
+import { Markdown } from './components/Markdown.js';
 import { newTopic, chat, resume, endSession, checkResume, health } from './api.js';
 
 interface Message {
   role: 'tutor' | 'learner';
   content: string;
+  error?: boolean;
 }
+
+const MODE_TONE: Record<string, string> = {
+  PROBING: 'chip--violet',
+  TEACHING: 'chip--cyan',
+  PREDICTING: 'chip--amber',
+  PRACTICING: 'chip--magenta',
+  REVIEWING: 'chip--violet',
+  DONE: 'chip--lime'
+};
 
 export default function App() {
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -98,7 +109,7 @@ export default function App() {
       setConfigError(res.configError ?? 'Gemini not configured.');
       setMessages((m) => [
         ...m,
-        { role: 'tutor', content: res.configError ?? 'Gemini not configured.' }
+        { role: 'tutor', content: res.configError ?? 'Gemini not configured.', error: true }
       ]);
       return;
     }
@@ -125,100 +136,170 @@ export default function App() {
 
   function handleError(err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    setMessages((m) => [...m, { role: 'tutor', content: `Error: ${msg}` }]);
+    setMessages((m) => [...m, { role: 'tutor', content: `Error: ${msg}`, error: true }]);
   }
 
-  if (configured === false) {
+  if (configured === null) {
     return (
-      <div style={{ padding: 24, maxWidth: 600, margin: '0 auto' }}>
-        <h1>Smart Learning</h1>
-        <p>Gemini is not configured. Add your API key to continue.</p>
-        <ol>
-          <li>
-            Get a free API key from{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-              Google AI Studio
-            </a>
-          </li>
-          <li>Create a <code>.env</code> file next to <code>.env.example</code></li>
-          <li>
-            Add <code>GEMINI_API_KEY=your-key</code>
-          </li>
-          <li>Restart the dev server</li>
-        </ol>
-        {configError && <pre style={{ color: 'red' }}>{configError}</pre>}
+      <div className="boot">
+        <span>initializing neural link…</span>
       </div>
     );
   }
 
+  if (configured === false) {
+    return (
+      <div className="setup">
+        <div className="setup__card">
+          <div className="setup__badge">
+            <span className="dot dot--off" /> api key required
+          </div>
+          <h1 className="setup__title">Smart Learning</h1>
+          <p className="setup__lede">
+            The tutor runs on Gemini. Drop in a key and the lights come on — it takes about a
+            minute.
+          </p>
+          <ol className="steps">
+            <li>
+              Grab a free API key from{' '}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                Google AI Studio
+              </a>
+            </li>
+            <li>
+              Create a <code>.env</code> file next to <code>.env.example</code>
+            </li>
+            <li>
+              Add <code>GEMINI_API_KEY=your-key</code>
+            </li>
+            <li>Restart the dev server</li>
+          </ol>
+          {configError && <pre className="trace">{configError}</pre>}
+        </div>
+      </div>
+    );
+  }
+
+  const statusTone = loading ? 'dot--busy' : sessionId ? 'dot--live' : 'dot';
+
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif', maxWidth: 900, margin: '0 auto' }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>Smart Learning</h1>
+    <div className="shell">
+      <header className="titlebar">
+        <div className="lights">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="brand mono">
+          <span className="brand__mark">◈</span>
+          <span className="brand__name">smart-learning</span>
+          <span className="brand__ver">v0.1</span>
+        </div>
+        <div className="titlebar__right">
+          {sessionId && (
+            <>
+              <span className="chip chip--violet">
+                <span className="chip__key">concept</span>
+                <span className="chip__val">{concept}</span>
+              </span>
+              <span className={`chip ${MODE_TONE[mode] ?? 'chip--cyan'}`}>{mode || 'IDLE'}</span>
+            </>
+          )}
+          <span className="chip chip--dim">
+            <span className={`dot ${statusTone}`} />
+            {loading ? 'thinking' : sessionId ? 'live' : 'ready'}
+          </span>
+        </div>
       </header>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <input
-          value={goalInput}
-          onChange={(e) => setGoalInput(e.target.value)}
-          placeholder="What do you want to learn?"
-          style={{ flex: 1, padding: 10, borderRadius: 6, border: '1px solid #999' }}
-        />
-        <button onClick={startNew} disabled={loading || !goalInput.trim()} style={{ padding: '10px 16px' }}>
-          New Topic
+      <div className="cmdbar">
+        <label className="cmdbar__input">
+          <span className="cmdbar__prompt mono">›</span>
+          <input
+            className="field"
+            value={goalInput}
+            onChange={(e) => setGoalInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && goalInput.trim() && !loading) startNew();
+            }}
+            placeholder="what do you want to learn?"
+            aria-label="Learning goal"
+          />
+        </label>
+        <button
+          className="btn btn--primary"
+          onClick={startNew}
+          disabled={loading || !goalInput.trim()}
+        >
+          ▶ New Topic
         </button>
         {resumeAvailable && (
-          <button onClick={doResume} disabled={loading} style={{ padding: '10px 16px' }}>
-            Resume
+          <button className="btn btn--ghost-violet" onClick={doResume} disabled={loading}>
+            ⟲ Resume
           </button>
         )}
         {sessionId && (
-          <button onClick={doEnd} disabled={loading} style={{ padding: '10px 16px' }}>
-            End & Notes
+          <button className="btn btn--ghost-magenta" onClick={doEnd} disabled={loading}>
+            ■ End &amp; Notes
           </button>
         )}
       </div>
 
-      {sessionId && (
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            marginBottom: 12,
-            fontSize: 14,
-            color: '#555'
-          }}
-        >
-          <span>
-            <strong>Concept:</strong> {concept}
-          </span>
-          <span>
-            <strong>Mode:</strong> {mode}
-          </span>
-          <span>
-            <strong>Hint level:</strong> {hintLevel}
-          </span>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 320 }}>
-          <Chat messages={messages} onSend={sendMessage} disabled={loading || !sessionId} />
-        </div>
+      <main className={`workspace ${visualState ? 'workspace--split' : ''}`}>
+        <section className="panel">
+          <div className="panel__head">
+            <span className="panel__title">tutor.session</span>
+            <span className="panel__spacer" />
+            <span className="chip chip--dim">{messages.length} msg</span>
+          </div>
+          <Chat
+            messages={messages}
+            onSend={sendMessage}
+            disabled={loading || !sessionId}
+            loading={loading}
+            hasSession={!!sessionId}
+          />
+        </section>
 
         {visualState && (
-          <div style={{ flex: 1, minWidth: 320 }}>
+          <section className="panel">
             <Visualizer visualState={visualState} />
-          </div>
+          </section>
         )}
-      </div>
+      </main>
 
       {notes && (
-        <div style={{ marginTop: 24, padding: 12, border: '1px solid #ccc', borderRadius: 8 }}>
-          <h2>Session Notes</h2>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{notes}</pre>
-        </div>
+        <section className="panel" style={{ marginBottom: 14, maxHeight: '40vh' }}>
+          <div className="panel__head">
+            <span className="panel__title panel__title--magenta">session.notes.md</span>
+          </div>
+          <div className="panel__body notes">
+            <Markdown>{notes}</Markdown>
+          </div>
+        </section>
       )}
+
+      <footer className="statusbar">
+        <span className="statusbar__item">
+          <span className={`dot ${statusTone}`} />
+          <b>{loading ? 'GENERATING' : sessionId ? 'CONNECTED' : 'STANDBY'}</b>
+        </span>
+        {sessionId && (
+          <>
+            <span className="statusbar__item">
+              hints <b>{hintLevel}</b>
+            </span>
+            <span className="statusbar__item">
+              turns <b>{messages.length}</b>
+            </span>
+          </>
+        )}
+        <span className="statusbar__right">
+          <span className="statusbar__item">gemini</span>
+          <span className="statusbar__item">utf-8</span>
+          <span className="statusbar__item">tsx</span>
+        </span>
+      </footer>
     </div>
   );
 }
