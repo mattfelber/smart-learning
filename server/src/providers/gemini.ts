@@ -7,11 +7,30 @@ export class GeminiProvider implements LLMProvider {
   private client: GoogleGenAI;
   private fallbacks: string[];
 
-  constructor(private apiKey: string, model: string) {
+  /**
+   * The free tier meters requests per model per day, so every extra model in
+   * this chain is extra daily headroom. The flash models are the better
+   * teachers but carry a very small daily allowance; the flash-lite models are
+   * weaker yet allow far more requests, which makes them the right safety net
+   * rather than the first choice.
+   *
+   * Verified against the live models endpoint: 2.5-flash and 2.5-flash-lite are
+   * listed but return 404, and the gemma models ignore JSON mode, so none of
+   * them belong here.
+   */
+  static readonly DEFAULT_CHAIN = [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite'
+  ];
+
+  constructor(private apiKey: string, model: string, chain?: string[]) {
     this.client = new GoogleGenAI({ apiKey });
-    const candidates = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
-    const ordered = [model, ...candidates.filter((m) => m !== model)];
-    this.fallbacks = [...new Set(ordered)];
+    const candidates = chain?.length ? chain : GeminiProvider.DEFAULT_CHAIN;
+    this.fallbacks = [...new Set([model, ...candidates.filter((m) => m !== model)])];
   }
 
   async generate(req: GenerateRequest): Promise<GenerateResponse> {
@@ -50,8 +69,12 @@ export class GeminiProvider implements LLMProvider {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         errors.push(`${model}: ${message}`);
-        const isUnavailable = message.includes('UNAVAILABLE') || message.includes('429') || message.includes('503');
-        if (!isUnavailable) break;
+        // Move to the next model when this one is out of quota, busy, or simply
+        // gone. Retired model ids still appear in the models listing and return
+        // 404, which previously aborted the entire chain.
+        const tryNext =
+          /UNAVAILABLE|RESOURCE_EXHAUSTED|NOT_FOUND|\b429\b|\b503\b|\b404\b/.test(message);
+        if (!tryNext) break;
       }
     }
 

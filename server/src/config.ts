@@ -37,6 +37,19 @@ const schema = z.object({
   LLM_PROVIDER: z.enum(['gemini']).default('gemini'),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
+  // Comma-separated fallback chain. Each model has its own free daily quota, so
+  // more entries means more requests per day before everything is exhausted.
+  GEMINI_FALLBACKS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean)
+        : undefined
+    ),
   PORT: z.string().default('3001').transform(Number),
   DATA_DIR: z.string().default(resolve(process.cwd(), '../learning-data'))
 });
