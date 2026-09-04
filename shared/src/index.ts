@@ -130,4 +130,5 @@ export interface LearnerState {
   lastTopicId: string | null;
 }
 
-export * from './visual.js';
+export { buildTrace, stateFromTrace, nextStep, DEFAULT_EXAMPLE } from './visual.js';
+export type { SlidingWindowVisualState, VisualStep } from './visual.js';
