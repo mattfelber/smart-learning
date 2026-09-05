@@ -51,6 +51,8 @@ const schema = z.object({
         : undefined
     ),
   PORT: z.string().default('3001').transform(Number),
+  // Only used to display costs in a familiar currency. Update as the rate moves.
+  USD_BRL: z.string().default('5.10').transform(Number),
   DATA_DIR: z.string().default(resolve(process.cwd(), '../learning-data'))
 });
 

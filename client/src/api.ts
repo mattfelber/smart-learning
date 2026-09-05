@@ -1,4 +1,9 @@
-import type { TutorResponse, SessionState, TopicSummary } from '@smart-learning/shared';
+import type {
+  TutorResponse,
+  SessionState,
+  TopicSummary,
+  UsageSummary
+} from '@smart-learning/shared';
 
 export type ApiErrorKind =
   | 'RATE_LIMIT_DAILY'
@@ -93,4 +98,9 @@ export function getTranscript(sessionId: string): Promise<SessionState> {
 
 export function endSession(sessionId: string): Promise<{ note: string }> {
   return post('/api/end', { sessionId });
+}
+
+/** Free: rolls up the local token ledger. */
+export function getUsage(sessionId?: string | null): Promise<UsageSummary> {
+  return get(`/api/usage${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`);
 }

@@ -9,9 +9,65 @@ export interface GenerateRequest {
   responseMimeType?: 'text/plain' | 'application/json';
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  /** Visible reply tokens only. */
+  outputTokens: number;
+  /** Reasoning tokens. Google bills these at the output rate. */
+  thoughtTokens: number;
+  /** Portion of the input served from cache, billed at a discount. */
+  cachedTokens: number;
+  totalTokens: number;
+}
+
 export interface GenerateResponse {
   text: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: TokenUsage;
+  /** Which model in the fallback chain actually answered. */
+  model?: string;
+}
+
+export type UsageKind = 'tutor-turn' | 'session-summary';
+
+export interface UsageRecord extends TokenUsage {
+  timestamp: string;
+  model: string;
+  sessionId: string | null;
+  topicId: string | null;
+  kind: UsageKind;
+  /** Null when the model has no known price (then cost is unknown, not zero). */
+  costUsd: number | null;
+}
+
+export interface UsageBucket {
+  key: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  thoughtTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  /** True when some requests in this bucket used an unpriced model. */
+  partialCost: boolean;
+}
+
+export interface UsageSummary {
+  today: UsageBucket;
+  last30Days: UsageBucket;
+  allTime: UsageBucket;
+  session: UsageBucket | null;
+  byModel: UsageBucket[];
+  byDay: UsageBucket[];
+  /** Averages across all recorded tutor turns, for projecting spend. */
+  perTurn: {
+    inputTokens: number;
+    outputTokens: number;
+    thoughtTokens: number;
+    costUsd: number;
+  } | null;
+  usdBrl: number;
+  unpricedModels: string[];
+  pricesAsOf: string;
 }
 
 export interface LLMProviderConfig {

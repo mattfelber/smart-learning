@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
-import type { SessionState, SlidingWindowVisualState, TutorResponse } from '@smart-learning/shared';
+import type {
+  SessionState,
+  SlidingWindowVisualState,
+  TutorResponse,
+  UsageSummary
+} from '@smart-learning/shared';
 import { conceptHasVisual } from '@smart-learning/shared';
 import { Chat } from './components/Chat.js';
 import { Visualizer } from './components/Visualizer.js';
 import { Markdown } from './components/Markdown.js';
 import { Library } from './components/Library.js';
+import { Usage } from './components/Usage.js';
 import {
   newTopic,
   chat,
@@ -14,6 +20,7 @@ import {
   health,
   openSession,
   getTranscript,
+  getUsage,
   ApiError
 } from './api.js';
 
@@ -49,6 +56,18 @@ export default function App() {
   const [vaultVersion, setVaultVersion] = useState(0);
   const [alert, setAlert] = useState<{ message: string; kind: string } | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+
+  // Reads the local ledger only, so it is cheap to refresh after every turn.
+  function refreshUsage(id: string | null = sessionId) {
+    getUsage(id).then(setUsage).catch(() => {});
+  }
+
+  useEffect(() => {
+    refreshUsage(sessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Count down the provider's suggested retry delay so the wait is visible.
   useEffect(() => {
@@ -150,6 +169,7 @@ export default function App() {
     try {
       const res = await chat(sessionId, text);
       appendTutor(res);
+      refreshUsage(sessionId);
       return true;
     } catch (err) {
       // Roll the optimistic bubble back out so the composer can hand the text
@@ -219,6 +239,7 @@ export default function App() {
       return;
     }
     const full = res as TutorResponse & { sessionId: string };
+    refreshUsage(full.sessionId);
     setSessionId(full.sessionId);
     setMode(full.mode);
     setConcept(full.concept);
@@ -374,6 +395,16 @@ export default function App() {
         <button className="btn" onClick={() => setLibraryOpen(true)} disabled={loading}>
           ☰ Vault
         </button>
+        <button
+          className="btn"
+          onClick={() => {
+            refreshUsage(sessionId);
+            setUsageOpen(true);
+          }}
+          title="Token usage and estimated cost"
+        >
+          ⌁ Tokens
+        </button>
       </div>
 
       {alert && (
@@ -447,6 +478,24 @@ export default function App() {
             </span>
           </>
         )}
+        {usage && (usage.session ?? usage.today).requests > 0 && (
+          <button
+            className="statusbar__item statusbar__item--btn"
+            onClick={() => setUsageOpen(true)}
+            title="Token usage and estimated cost"
+          >
+            ⌁{' '}
+            <b>
+              {(
+                (usage.session ?? usage.today).inputTokens +
+                (usage.session ?? usage.today).outputTokens +
+                (usage.session ?? usage.today).thoughtTokens
+              ).toLocaleString()}
+            </b>{' '}
+            tok · R$
+            {((usage.session ?? usage.today).costUsd * usage.usdBrl).toFixed(3)}
+          </button>
+        )}
         <span className="statusbar__right">
           {concept && <span className="statusbar__item">{concept}</span>}
           <span className="statusbar__item">gemini</span>
@@ -462,6 +511,8 @@ export default function App() {
         activeSessionId={sessionId}
         refreshKey={vaultVersion}
       />
+
+      <Usage open={usageOpen} onClose={() => setUsageOpen(false)} usage={usage} />
     </div>
   );
 }

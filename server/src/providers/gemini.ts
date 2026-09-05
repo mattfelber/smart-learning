@@ -57,12 +57,19 @@ export class GeminiProvider implements LLMProvider {
           continue;
         }
 
+        const meta = interaction.usageMetadata;
         return {
           text,
-          usage: interaction.usageMetadata
+          model,
+          usage: meta
             ? {
-                inputTokens: interaction.usageMetadata.promptTokenCount ?? 0,
-                outputTokens: interaction.usageMetadata.candidatesTokenCount ?? 0
+                inputTokens: meta.promptTokenCount ?? 0,
+                outputTokens: meta.candidatesTokenCount ?? 0,
+                // Reported separately from candidates but billed as output, so
+                // ignoring it understates cost on every thinking model.
+                thoughtTokens: meta.thoughtsTokenCount ?? 0,
+                cachedTokens: meta.cachedContentTokenCount ?? 0,
+                totalTokens: meta.totalTokenCount ?? 0
               }
             : undefined
         };

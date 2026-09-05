@@ -11,7 +11,10 @@ import type {
   ConceptState,
   TutorMessage,
   SessionSummary,
-  TopicSummary
+  TopicSummary,
+  UsageRecord,
+  UsageBucket,
+  UsageSummary
 } from '@smart-learning/shared';
 import { config } from '../config.js';
 
@@ -298,6 +301,95 @@ export class Store {
     if (!topic) return;
     topic.concepts[concept] = { ...topic.concepts[concept], ...patch };
     this.saveTopic(topic);
+  }
+
+  private usageFile(): string {
+    return resolve(this.dataDir, 'usage', 'usage.jsonl');
+  }
+
+  /** Append-only ledger: one line per model request. */
+  appendUsage(record: UsageRecord): void {
+    ensureDir(dirname(this.usageFile()));
+    appendFileSync(this.usageFile(), JSON.stringify(record) + '\n');
+  }
+
+  loadUsage(): UsageRecord[] {
+    const path = this.usageFile();
+    if (!existsSync(path)) return [];
+    return readFileSync(path, 'utf-8')
+      .replace(/^\uFEFF/, '')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as UsageRecord;
+        } catch {
+          return null;
+        }
+      })
+      .filter((r): r is UsageRecord => Boolean(r));
+  }
+
+  summarizeUsage(sessionId?: string, usdBrl = 5.1, pricesAsOf = ''): UsageSummary {
+    const records = this.loadUsage();
+
+    const bucket = (key: string, rows: UsageRecord[]): UsageBucket => ({
+      key,
+      requests: rows.length,
+      inputTokens: rows.reduce((n, r) => n + r.inputTokens, 0),
+      outputTokens: rows.reduce((n, r) => n + r.outputTokens, 0),
+      thoughtTokens: rows.reduce((n, r) => n + r.thoughtTokens, 0),
+      totalTokens: rows.reduce((n, r) => n + r.totalTokens, 0),
+      costUsd: rows.reduce((n, r) => n + (r.costUsd ?? 0), 0),
+      partialCost: rows.some((r) => r.costUsd === null)
+    });
+
+    const dayOf = (iso: string) => iso.slice(0, 10);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const byDayMap = new Map<string, UsageRecord[]>();
+    const byModelMap = new Map<string, UsageRecord[]>();
+    for (const r of records) {
+      const d = dayOf(r.timestamp);
+      if (!byDayMap.has(d)) byDayMap.set(d, []);
+      byDayMap.get(d)!.push(r);
+      if (!byModelMap.has(r.model)) byModelMap.set(r.model, []);
+      byModelMap.get(r.model)!.push(r);
+    }
+
+    const turns = records.filter((r) => r.kind === 'tutor-turn');
+    const turnBucket = bucket('per-turn', turns);
+
+    return {
+      today: bucket(todayKey, byDayMap.get(todayKey) ?? []),
+      last30Days: bucket(
+        'last-30-days',
+        records.filter((r) => new Date(r.timestamp).getTime() >= cutoff)
+      ),
+      allTime: bucket('all-time', records),
+      session: sessionId
+        ? bucket(sessionId, records.filter((r) => r.sessionId === sessionId))
+        : null,
+      byModel: [...byModelMap.entries()]
+        .map(([model, rows]) => bucket(model, rows))
+        .sort((a, b) => b.requests - a.requests),
+      byDay: [...byDayMap.entries()]
+        .map(([day, rows]) => bucket(day, rows))
+        .sort((a, b) => (a.key < b.key ? 1 : -1))
+        .slice(0, 30),
+      perTurn: turns.length
+        ? {
+            inputTokens: Math.round(turnBucket.inputTokens / turns.length),
+            outputTokens: Math.round(turnBucket.outputTokens / turns.length),
+            thoughtTokens: Math.round(turnBucket.thoughtTokens / turns.length),
+            costUsd: turnBucket.costUsd / turns.length
+          }
+        : null,
+      usdBrl,
+      unpricedModels: [...new Set(records.filter((r) => r.costUsd === null).map((r) => r.model))],
+      pricesAsOf
+    };
   }
 
   saveSessionMarkdown(sessionId: string, markdown: string): void {

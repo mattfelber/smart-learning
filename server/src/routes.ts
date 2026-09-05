@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import { Tutor } from './tutor/orchestrator.js';
 import { Store } from './persistence/store.js';
 import { ProviderError } from './providers/errors.js';
+import { PRICES_AS_OF } from './pricing.js';
+import { config } from './config.js';
 
 function asyncHandler(fn: (req: Request, res: Response) => Promise<unknown>) {
   return (req: Request, res: Response) => {
@@ -130,6 +132,15 @@ export function createRoutes(tutor: Tutor, store: Store, configured: boolean, co
     '/topics',
     asyncHandler(async (_req, res) => {
       res.json(store.listTopics());
+    })
+  );
+
+  /** Token ledger rollup. Free — reads local data only. */
+  router.get(
+    '/usage',
+    asyncHandler(async (req, res) => {
+      const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+      res.json(store.summarizeUsage(sessionId, config.USD_BRL, PRICES_AS_OF));
     })
   );
 

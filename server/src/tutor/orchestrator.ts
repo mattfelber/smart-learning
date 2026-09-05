@@ -9,6 +9,8 @@ import type {
   TutorMode
 } from '@smart-learning/shared';
 import { Store } from '../persistence/store.js';
+import { costOf } from '../pricing.js';
+import type { GenerateResponse, UsageKind } from '@smart-learning/shared';
 import type { LLMProvider } from '../providers/types.js';
 import { tutorPrompt, summaryPrompt } from './prompts.js';
 import {
@@ -151,6 +153,7 @@ export class Tutor {
     const events = this.store.loadEvents(sessionId);
     const prompt = summaryPrompt(topic, session);
     const res = await this.provider.generate({ prompt, maxTokens: 2048 });
+    this.recordUsage(res, 'session-summary', session.id, topic.id);
     const note = res.text;
 
     this.store.saveSessionMarkdown(session.id, note);
@@ -192,6 +195,7 @@ export class Tutor {
       responseMimeType: 'application/json',
       maxTokens: 2048
     });
+    this.recordUsage(res, 'tutor-turn', session.id, topic.id);
     const output = this.parseOutput(res.text, concept);
 
     const previousMode = session.mode;
@@ -266,6 +270,28 @@ export class Tutor {
       needsConfig: false,
       sessionId: session.id
     };
+  }
+
+  /**
+   * Write one ledger line per model request. Cost is computed here rather than
+   * at read time so a later price change cannot silently rewrite history.
+   */
+  private recordUsage(
+    res: GenerateResponse,
+    kind: UsageKind,
+    sessionId: string | null,
+    topicId: string | null
+  ): void {
+    if (!res.usage || !res.model) return;
+    this.store.appendUsage({
+      timestamp: now(),
+      model: res.model,
+      sessionId,
+      topicId,
+      kind,
+      ...res.usage,
+      costUsd: costOf(res.usage, res.model)
+    });
   }
 
   private updateConcept(
