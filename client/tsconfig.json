@@ -10,7 +10,13 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      // Mirrors the Vite alias so the type checker and the bundler read the
+      // same shared source, instead of tsc reading dist and Vite reading src.
+      "@smart-learning/shared": ["../shared/src/index.ts"]
+    }
   },
   "include": ["src"]
 }
