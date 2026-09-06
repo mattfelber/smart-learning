@@ -11,10 +11,11 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
       // Mirrors the Vite alias so the type checker and the bundler read the
       // same shared source, instead of tsc reading dist and Vite reading src.
+      // Resolved relative to this file; `paths` needs no `baseUrl` since TS 4.4,
+      // and `baseUrl` is deprecated for removal in TS 7.
       "@smart-learning/shared": ["../shared/src/index.ts"]
     }
   },
