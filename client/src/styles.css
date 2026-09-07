@@ -775,6 +775,34 @@ kbd {
   font-size: 12.5px;
 }
 
+/* Text arriving live. Kept as plain pre-wrap text so half-written markdown
+   does not reflow the bubble on every chunk. */
+.msg__bubble--live {
+  white-space: pre-wrap;
+}
+
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--neon-cyan);
+  box-shadow: 0 0 8px var(--neon-cyan);
+  animation: caret 1s steps(2, start) infinite;
+}
+
+@keyframes caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Typing indicator */
 
 .typing {

@@ -13,6 +13,8 @@ interface Props {
   onSend: (message: string) => Promise<boolean> | void;
   disabled: boolean;
   loading?: boolean;
+  /** Tutor text currently arriving; empty string means the reply has not started. */
+  streaming?: string | null;
   hasSession?: boolean;
   placeholder?: string;
 }
@@ -22,6 +24,7 @@ export function Chat({
   onSend,
   disabled,
   loading = false,
+  streaming = null,
   hasSession = false,
   placeholder = 'Explain it in your own words…'
 }: Props) {
@@ -33,7 +36,7 @@ export function Chat({
   useLayoutEffect(() => {
     const log = logRef.current;
     if (log) log.scrollTop = log.scrollHeight;
-  }, [messages.length, loading]);
+  }, [messages.length, loading, streaming]);
 
   // Hand focus back to the composer the moment the tutor is done talking.
   useEffect(() => {
@@ -101,11 +104,21 @@ export function Chat({
         {loading && (
           <div className="msg msg--tutor">
             <div className="msg__who">◈ tutor</div>
-            <div className="msg__bubble typing" aria-label="Tutor is thinking">
-              <i />
-              <i />
-              <i />
-            </div>
+            {streaming ? (
+              // Render as plain text while it arrives: the markdown is still
+              // half-written, and reflowing it on every chunk makes the text
+              // jump around as fences and lists open and close.
+              <div className="msg__bubble msg__bubble--live">
+                {streaming}
+                <span className="caret" />
+              </div>
+            ) : (
+              <div className="msg__bubble typing" aria-label="Tutor is thinking">
+                <i />
+                <i />
+                <i />
+              </div>
+            )}
           </div>
         )}
       </div>

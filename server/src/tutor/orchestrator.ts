@@ -13,6 +13,7 @@ import { costOf } from '../pricing.js';
 import type { GenerateResponse, UsageKind } from '@smart-learning/shared';
 import type { LLMProvider } from '../providers/types.js';
 import { tutorPrompt, summaryPrompt } from './prompts.js';
+import { extractPartialString } from './partialJson.js';
 import {
   stateFromTrace,
   nextStep,
@@ -76,7 +77,11 @@ export class Tutor {
     return this.tutorTurn(session, topic, `I want to learn ${goal}. Start by probing my knowledge.`);
   }
 
-  async continueSession(sessionId: string, learnerInput: string): Promise<TutorResponse> {
+  async continueSession(
+    sessionId: string,
+    learnerInput: string,
+    onMessageDelta?: (messageSoFar: string) => void
+  ): Promise<TutorResponse> {
     const session = this.store.loadSession(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     const topic = this.store.loadTopic(session.topicId);
@@ -87,7 +92,7 @@ export class Tutor {
       detail: learnerInput
     });
 
-    return this.tutorTurn(session, topic, learnerInput);
+    return this.tutorTurn(session, topic, learnerInput, onMessageDelta);
   }
 
   async resume(): Promise<(TutorResponse & { sessionId: string }) | null> {
@@ -166,7 +171,8 @@ export class Tutor {
   private async tutorTurn(
     session: SessionState,
     topic: TopicState,
-    learnerInput: string
+    learnerInput: string,
+    onMessageDelta?: (messageSoFar: string) => void
   ): Promise<TutorResponse & { sessionId: string }> {
     const goal = topic.goal;
     const concept = session.currentConcept;
@@ -190,11 +196,23 @@ export class Tutor {
       currentVisualText
     });
 
-    const res = await this.provider.generate({
+    const request = {
       prompt,
-      responseMimeType: 'application/json',
+      responseMimeType: 'application/json' as const,
       maxTokens: 2048
-    });
+    };
+
+    // Stream when the caller wants progress and the provider can do it. The
+    // reply is a JSON object whose first key is `message`, so the prose can be
+    // decoded and forwarded well before the object closes.
+    const res =
+      onMessageDelta && this.provider.generateStream
+        ? await this.provider.generateStream(request, (rawSoFar) => {
+            const partial = extractPartialString(rawSoFar, 'message');
+            if (partial) onMessageDelta(partial);
+          })
+        : await this.provider.generate(request);
+
     this.recordUsage(res, 'tutor-turn', session.id, topic.id);
     const output = this.parseOutput(res.text, concept);
 

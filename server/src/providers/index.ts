@@ -6,7 +6,14 @@ export function createProvider(): { provider: LLMProvider; configured: boolean; 
   if (config.LLM_PROVIDER === 'gemini') {
     if (!config.GEMINI_API_KEY) {
       return {
-        provider: new GeminiProvider('placeholder', config.GEMINI_MODEL, config.GEMINI_FALLBACKS),
+        provider: new GeminiProvider(
+          'placeholder',
+          config.GEMINI_MODEL,
+          config.GEMINI_FALLBACKS,
+          config.GEMINI_THINKING_LEVEL,
+          config.GEMINI_FIRST_TOKEN_TIMEOUT_MS,
+          config.GEMINI_REQUEST_TIMEOUT_MS
+        ),
         configured: false,
         error:
           'Gemini API key is missing. Create a .env file from .env.example and set GEMINI_API_KEY.'
@@ -16,7 +23,10 @@ export function createProvider(): { provider: LLMProvider; configured: boolean; 
       provider: new GeminiProvider(
         config.GEMINI_API_KEY,
         config.GEMINI_MODEL,
-        config.GEMINI_FALLBACKS
+        config.GEMINI_FALLBACKS,
+        config.GEMINI_THINKING_LEVEL,
+        config.GEMINI_FIRST_TOKEN_TIMEOUT_MS,
+        config.GEMINI_REQUEST_TIMEOUT_MS
       ),
       configured: true
     };

@@ -37,6 +37,20 @@ const schema = z.object({
   LLM_PROVIDER: z.enum(['gemini']).default('gemini'),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
+  // How hard the model reasons before answering. Thinking happens before any
+  // visible token, so it dominates the wait: measured 3.9s of a 4.4s reply on
+  // gemini-3.8-flash. Supported levels vary per model and an unsupported value
+  // is retried without it. Leave unset for the model default.
+  GEMINI_THINKING_LEVEL: z.enum(['MINIMAL', 'LOW', 'MEDIUM', 'HIGH']).optional(),
+  // Streaming: abort a model that has not emitted its first text chunk within
+  // this window and fall through to the next one. The SDK gives no error while
+  // a request sits queued or retrying internally, so without this a busy model
+  // can stall a turn indefinitely.
+  GEMINI_FIRST_TOKEN_TIMEOUT_MS: z.string().default('25000').transform(Number),
+  // Hard cap on a single model attempt, thinking included. Summary generation
+  // and other non-streaming calls rely on this since they have no first-token
+  // watchdog.
+  GEMINI_REQUEST_TIMEOUT_MS: z.string().default('120000').transform(Number),
   // Comma-separated fallback chain. Each model has its own free daily quota, so
   // more entries means more requests per day before everything is exhausted.
   GEMINI_FALLBACKS: z

@@ -76,6 +76,86 @@ export function createRoutes(tutor: Tutor, store: Store, configured: boolean, co
     })
   );
 
+  /**
+   * Streaming counterpart of /chat. Most of the wait on a thinking model happens
+   * before the first visible token, so forwarding the prose as it is generated
+   * is what makes the tutor feel responsive.
+   */
+  router.post('/chat/stream', (req, res) => {
+    const { sessionId, message } = req.body;
+    if (!configured || !sessionId || typeof message !== 'string') {
+      res.status(configured ? 400 : 200).json(
+        configured
+          ? { error: 'sessionId and message are required' }
+          : { message: configError ?? 'Gemini is not configured.', needsConfig: true }
+      );
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Without this a proxy may buffer the whole response and defeat streaming.
+      'X-Accel-Buffering': 'no'
+    });
+
+    // Node holds headers until the first body write, so without this the client
+    // sees nothing at all until the model's first token — which on a thinking
+    // model is several seconds, long enough to look like a dead connection.
+    res.flushHeaders();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Track the response side: `req` can emit 'close' once the request body has
+    // been consumed, which would flip `closed` before the model has said a word
+    // and silently swallow every delta, the done frame, and even res.end().
+    let closed = false;
+    res.on('close', () => {
+      closed = true;
+    });
+
+    // Comment frames keep the connection warm while the model is still thinking.
+    send('open', { ok: true });
+    const heartbeat = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 15000);
+
+    tutor
+      .continueSession(sessionId, message, (messageSoFar) => {
+        if (!closed) send('delta', { text: messageSoFar });
+      })
+      .then((result) => {
+        if (!closed) send('done', result);
+      })
+      .catch((err) => {
+        if (err instanceof ProviderError) {
+          console.error(`[api] ${err.kind}: ${err.message}`);
+          if (!closed) {
+            send('fail', {
+              error: err.message,
+              kind: err.kind,
+              retryAfterSeconds: err.retryAfterSeconds
+            });
+          }
+        } else {
+          console.error(err);
+          if (!closed) {
+            send('fail', {
+              error: err instanceof Error ? err.message : String(err),
+              kind: 'UNKNOWN'
+            });
+          }
+        }
+      })
+      .finally(() => {
+        clearInterval(heartbeat);
+        if (!closed) res.end();
+      });
+  });
+
   router.get(
     '/resume',
     asyncHandler(async (_req, res) => {

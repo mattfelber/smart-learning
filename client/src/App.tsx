@@ -13,7 +13,7 @@ import { Library } from './components/Library.js';
 import { Usage } from './components/Usage.js';
 import {
   newTopic,
-  chat,
+  chatStream,
   resume,
   endSession,
   checkResume,
@@ -58,6 +58,8 @@ export default function App() {
   const [cooldown, setCooldown] = useState(0);
   const [usageOpen, setUsageOpen] = useState(false);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  /** Tutor text arriving right now; null when nothing is streaming. */
+  const [streaming, setStreaming] = useState<string | null>(null);
 
   // Reads the local ledger only, so it is cheap to refresh after every turn.
   function refreshUsage(id: string | null = sessionId) {
@@ -166,12 +168,15 @@ export default function App() {
     if (!sessionId) return false;
     setMessages((m) => [...m, { role: 'learner', content: text }]);
     setLoading(true);
+    setStreaming('');
     try {
-      const res = await chat(sessionId, text);
+      const res = await chatStream(sessionId, text, setStreaming);
+      setStreaming(null);
       appendTutor(res);
       refreshUsage(sessionId);
       return true;
     } catch (err) {
+      setStreaming(null);
       // Roll the optimistic bubble back out so the composer can hand the text
       // back instead of the learner having to retype it.
       setMessages((m) => {
@@ -441,6 +446,7 @@ export default function App() {
             onSend={sendMessage}
             disabled={loading || !sessionId || cooldown > 0}
             loading={loading}
+            streaming={streaming}
             hasSession={!!sessionId}
           />
         </section>
