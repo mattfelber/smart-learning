@@ -14,6 +14,12 @@ export interface PromptContext {
   currentVisualText: string | null;
   /** JSON of the spec currently on the whiteboard; null when the panel is empty. */
   currentVisualSpec: string | null;
+  /** Concepts the learner has already demonstrated this lesson. */
+  covered: string[];
+  /** How many unanswered probes the current concept has consumed. */
+  probeCount: number;
+  /** Deterministic learner-intent directive; overrides Socratic strategy. */
+  directive: string | null;
 }
 
 function formatConceptState(state: ConceptState): string {
@@ -37,6 +43,7 @@ Current mode: ${ctx.mode}
 Current concept: ${ctx.concept}
 Concept state: ${formatConceptState(ctx.conceptState)}
 Hint level: ${ctx.hintLevel}
+Covered this lesson: ${ctx.covered.join(', ') || 'none'} — do not re-test these unless the learner shows a misconception or asks to review.${ctx.probeCount >= 2 ? '\nYou have already probed this objective repeatedly — teach it directly and move forward.' : ''}${ctx.directive ? `\nLEARNER DIRECTIVE: ${ctx.directive}` : ''}
 ${
   visual
     ? `Current visual state: ${visual}`
@@ -79,6 +86,10 @@ Rules:
 - "correct" is your evaluation of the learner's last answer. Use true/false if there is an answer to evaluate, otherwise null (e.g. when probing or explaining).
 - If the learner is stuck, set "needsHint" to true and include a brief hint matching the current hint level in your message.
 - "confidenceAsk" should be true only occasionally when the learner gives an answer.
+- Learner control requests override Socratic strategy: if the learner says move on, advance; if they ask for the answer or keep saying they don't know, teach directly.
+- Do not repeatedly test the same objective — after ~3 unanswered probes on it, teach the answer and advance.
+- Match depth to the learner's stated goal (e.g. interview prep = applied patterns and common cases, not deep internals unless asked). Prefer progress over exhaustive coverage.
+- Do not end with a question merely because the previous message ended with one.
 ${
   visual
     ? `- IMPORTANT: set "window" to the exact left, right and zeroCount your message is describing. The visual is rendered from it, so it must match your words. If you walk the learner forward several steps, report the position you end on. Never leave it at a position you are no longer discussing.

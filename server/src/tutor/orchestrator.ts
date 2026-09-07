@@ -14,6 +14,7 @@ import type { GenerateResponse, UsageKind } from '@smart-learning/shared';
 import type { LLMProvider } from '../providers/types.js';
 import { tutorPrompt, summaryPrompt } from './prompts.js';
 import { extractPartialString } from './partialJson.js';
+import { detectLearnerDirective, directiveText } from './learnerControl.js';
 import {
   stateFromTrace,
   nextStep,
@@ -203,6 +204,11 @@ export class Tutor {
         ? session.visualState
         : undefined;
 
+    // Obvious learner control phrases are detected deterministically — no
+    // extra model call — and handed to the tutor as a directive that overrides
+    // the Socratic strategy for this turn.
+    const directive = detectLearnerDirective(learnerInput);
+
     const prompt = tutorPrompt({
       goal,
       mode: session.mode,
@@ -212,7 +218,10 @@ export class Tutor {
       learnerInput,
       hintLevel: session.hintLevel,
       currentVisualText,
-      currentVisualSpec: previousSpec ? JSON.stringify(previousSpec) : null
+      currentVisualSpec: previousSpec ? JSON.stringify(previousSpec) : null,
+      covered: session.coveredObjectives ?? [],
+      probeCount: session.probeCount ?? 0,
+      directive: directive ? directiveText(directive) : null
     });
 
     const request = {
@@ -239,6 +248,21 @@ export class Tutor {
     session.mode = output.mode;
     session.currentConcept = output.concept;
     session.lastInteractionAt = now();
+
+    // Lesson bookkeeping: a correct answer marks the objective covered so it is
+    // not re-tested in a loop; the probe counter resets when the objective moves.
+    // A "move on" request counts as covered — the learner declined the probe.
+    if (output.correct === true || directive?.kind === 'move-on') {
+      const covered = new Set(session.coveredObjectives ?? []);
+      covered.add(concept);
+      covered.add(output.concept);
+      session.coveredObjectives = [...covered].slice(-30);
+      session.probeCount = 0;
+    } else if (output.concept !== concept) {
+      session.probeCount = 0;
+    } else {
+      session.probeCount = (session.probeCount ?? 0) + 1;
+    }
 
     if (output.needsHint) {
       session.hintLevel = Math.min(session.hintLevel + 1, 5);

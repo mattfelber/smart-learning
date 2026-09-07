@@ -147,6 +147,10 @@ export interface SessionState {
   messages: TutorMessage[];
   visualStep?: number;
   visualState?: VisualSpec;
+  /** Probes spent on the current concept; reset when the concept changes. */
+  probeCount?: number;
+  /** Concepts demonstrated well enough this lesson; not re-tested on a loop. */
+  coveredObjectives?: string[];
   hintLevel: number;
   lastInteractionAt: string;
 }
