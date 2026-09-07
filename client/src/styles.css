@@ -2121,3 +2121,135 @@ kbd {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Generic visual specs: key-value, set, diagram
+   ========================================================================== */
+
+.kv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.kv__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 180px;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transition: all 0.25s var(--ease);
+}
+
+.kv__row--hl {
+  border-color: rgba(255, 79, 216, 0.55);
+  background: rgba(255, 79, 216, 0.08);
+  box-shadow: 0 0 14px -4px rgba(255, 79, 216, 0.7);
+}
+
+.kv__key {
+  color: var(--neon-magenta);
+  font-weight: 700;
+}
+
+.kv__arrow {
+  color: var(--ink-ghost);
+}
+
+.kv__val {
+  color: var(--ink);
+  margin-left: auto;
+}
+
+.setwrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 6px;
+  font-family: var(--font-mono);
+}
+
+.setwrap__brace {
+  font-size: 30px;
+  font-weight: 300;
+  color: var(--ink-ghost);
+}
+
+.setwrap__item {
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: all 0.25s var(--ease);
+}
+
+.setwrap__item--hl {
+  color: var(--ink);
+  border-color: rgba(125, 255, 155, 0.55);
+  background: rgba(125, 255, 155, 0.08);
+  box-shadow: var(--glow-lime);
+}
+
+.diagram {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow: auto;
+}
+
+.diagram__edges {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--ink-ghost);
+  pointer-events: none;
+}
+
+.diagram__edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.diagram__edgelabel {
+  fill: var(--ink-ghost);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.diagram__node {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.25;
+  color: var(--ink);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.diagram__node--hl {
+  border-color: rgba(157, 124, 255, 0.6);
+  background: rgba(157, 124, 255, 0.1);
+  box-shadow: 0 0 14px -4px rgba(157, 124, 255, 0.8);
+}

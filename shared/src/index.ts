@@ -1,5 +1,5 @@
 // Shared types and constants between client and server.
-import type { SlidingWindowVisualState } from './visual.js';
+import type { VisualSpec } from './visualSpec.js';
 
 export interface GenerateRequest {
   system?: string;
@@ -146,7 +146,7 @@ export interface SessionState {
   currentConcept: string;
   messages: TutorMessage[];
   visualStep?: number;
-  visualState?: SlidingWindowVisualState;
+  visualState?: VisualSpec;
   hintLevel: number;
   lastInteractionAt: string;
 }
@@ -161,7 +161,7 @@ export interface TutorResponse {
   message: string;
   mode: TutorMode;
   concept: string;
-  visualState?: SlidingWindowVisualState;
+  visualState?: VisualSpec;
   hintLevel: number;
   needsConfig: boolean;
   configError?: string;
@@ -196,6 +196,27 @@ export {
   DEFAULT_EXAMPLE
 } from './visual.js';
 export type { SlidingWindowVisualState, VisualStep, WindowPosition } from './visual.js';
+
+export {
+  ArrayVisualSpecSchema,
+  KeyValueVisualSpecSchema,
+  SetVisualSpecSchema,
+  DiagramVisualSpecSchema,
+  SlidingWindowVisualSpecSchema,
+  VisualSpecSchema,
+  parseVisualSpec,
+  normalizeVisualSpec,
+  slidingWindowSpec
+} from './visualSpec.js';
+export type {
+  VisualSpec,
+  VisualKind,
+  ArrayVisualSpec,
+  KeyValueVisualSpec,
+  SetVisualSpec,
+  DiagramVisualSpec,
+  SlidingWindowVisualSpec
+} from './visualSpec.js';
 
 export interface TopicSummary {
   id: string;

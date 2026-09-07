@@ -82,7 +82,7 @@ describe('conceptHasVisual', () => {
     expect(conceptHasVisual('sliding_window_shrink')).toBe(true);
   });
 
-  it('rejects concepts that have no visualization', () => {
+  it('is false for other concepts, which can still emit their own VisualSpec', () => {
     expect(conceptHasVisual('binary-search-basics')).toBe(false);
     expect(conceptHasVisual('orientation')).toBe(false);
     expect(conceptHasVisual('masterchef-prep')).toBe(false);

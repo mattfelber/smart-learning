@@ -16,6 +16,7 @@ import type {
   UsageBucket,
   UsageSummary
 } from '@smart-learning/shared';
+import { normalizeVisualSpec } from '@smart-learning/shared';
 import { config } from '../config.js';
 
 const DATA_DIR = config.DATA_DIR;
@@ -190,7 +191,11 @@ export class Store {
   }
 
   loadSession(sessionId: string): SessionState | null {
-    return loadJson<SessionState | null>(this.sessionMetadataFile(sessionId), null);
+    const session = loadJson<SessionState | null>(this.sessionMetadataFile(sessionId), null);
+    // Sessions saved before VisualSpec existed carry a bare sliding-window
+    // state; wrap it so the client always sees the discriminated union.
+    if (session) session.visualState = normalizeVisualSpec(session.visualState);
+    return session;
   }
 
   saveSession(session: SessionState): void {

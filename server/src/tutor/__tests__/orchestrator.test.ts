@@ -114,8 +114,10 @@ describe('Tutor orchestrator', () => {
     const cont = await tutor.continueSession(start.sessionId, 'I know arrays and loops.');
 
     expect(cont.mode).toBe('PREDICTING');
-    expect(cont.visualState).toBeDefined();
-    expect(cont.visualState!.stepIndex).toBeGreaterThan(0);
+    expect(cont.visualState?.kind).toBe('sliding-window');
+    if (cont.visualState?.kind === 'sliding-window') {
+      expect(cont.visualState.stepIndex).toBeGreaterThan(0);
+    }
 
     const session = store.loadSession(start.sessionId);
     expect(session!.mode).toBe('PREDICTING');

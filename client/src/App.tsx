@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import type {
   SessionState,
-  SlidingWindowVisualState,
+  VisualSpec,
   TutorResponse,
   UsageSummary
 } from '@smart-learning/shared';
-import { conceptHasVisual } from '@smart-learning/shared';
+import { conceptHasVisual, normalizeVisualSpec } from '@smart-learning/shared';
 import { Chat } from './components/Chat.js';
 import { Visualizer } from './components/Visualizer.js';
 import { Markdown } from './components/Markdown.js';
@@ -45,7 +45,7 @@ export default function App() {
   const [goalInput, setGoalInput] = useState('Sliding window algorithms for coding interviews');
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [visualState, setVisualState] = useState<SlidingWindowVisualState | null>(null);
+  const [visualState, setVisualState] = useState<VisualSpec | null>(null);
   const [mode, setMode] = useState<string>('');
   const [concept, setConcept] = useState<string>('');
   const [hintLevel, setHintLevel] = useState(0);
@@ -117,9 +117,15 @@ export default function App() {
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role as 'tutor' | 'learner', content: m.content }))
     );
-    // Older sessions stored a sliding-window state even for concepts that have
-    // no visualization, so gate on the concept as well as presence.
-    setVisualState(s.visualState && conceptHasVisual(s.currentConcept) ? s.visualState : null);
+    // Sessions written before VisualSpec may carry a bare sliding-window state
+    // (normalize wraps it) — and some stored it for concepts that never had a
+    // graphic, so a sliding-window spec is still gated on the concept.
+    const spec = normalizeVisualSpec(s.visualState);
+    setVisualState(
+      spec && (spec.kind !== 'sliding-window' || conceptHasVisual(s.currentConcept))
+        ? spec
+        : null
+    );
   }
 
   async function startNew() {
@@ -453,7 +459,7 @@ export default function App() {
 
         {visualState && (
           <section className="panel">
-            <Visualizer visualState={visualState} />
+            <Visualizer spec={visualState} />
           </section>
         )}
       </main>

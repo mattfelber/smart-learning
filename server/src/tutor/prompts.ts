@@ -10,8 +10,10 @@ export interface PromptContext {
   recentMessages: { role: string; content: string }[];
   learnerInput: string;
   hintLevel: number;
-  /** Null when the current concept has no visualization. */
+  /** Sliding-window trace state; null for concepts the model visualizes itself. */
   currentVisualText: string | null;
+  /** JSON of the spec currently on the whiteboard; null when the panel is empty. */
+  currentVisualSpec: string | null;
 }
 
 function formatConceptState(state: ConceptState): string {
@@ -38,7 +40,9 @@ Hint level: ${ctx.hintLevel}
 ${
   visual
     ? `Current visual state: ${visual}`
-    : 'There is no visualization for this concept. Teach with words and small examples only.'
+    : ctx.currentVisualSpec
+    ? `Visual currently on the whiteboard: ${ctx.currentVisualSpec}`
+    : 'The whiteboard is empty. You may put a structured visual on it via "visual" (see below).'
 }
 
 Recent conversation:
@@ -57,7 +61,9 @@ Respond in JSON exactly like this:
   "advanceVisual": false,
   "needsHint": false,
   "nextReview": null,
-  "window": ${visual ? '{ "left": 0, "right": 0, "zeroCount": 0 }' : 'null'}
+  "window": ${visual ? '{ "left": 0, "right": 0, "zeroCount": 0 }' : 'null'},
+  "visual": null,
+  "visualAction": null
 }
 
 Rules:
@@ -76,9 +82,21 @@ Rules:
 ${
   visual
     ? `- IMPORTANT: set "window" to the exact left, right and zeroCount your message is describing. The visual is rendered from it, so it must match your words. If you walk the learner forward several steps, report the position you end on. Never leave it at a position you are no longer discussing.
+- Keep "visual" and "visualAction" null for this concept; its graphic is rendered from "window".
 - "advanceVisual" is a fallback only; prefer "window".
 - Detect known sliding window misconceptions: shrinks window too early, believes window size must remain constant, moves left every iteration, forgets right expands first, confuses current window size with maximum size, fails to update zero count when left passes a zero.`
-    : '- Set "window" to null and "advanceVisual" to false; this concept has no visual.'
+    : `- Set "window" to null and "advanceVisual" to false.
+- "visualAction" controls the whiteboard shown beside the chat: "keep" leaves the current visual up, "replace" swaps in the spec given in "visual", "clear" empties the panel. Omit it (null) and a present "visual" is treated as "replace", otherwise "keep".
+- The whiteboard is persistent: prefer "keep" while the current visual still fits what you are teaching. Do not replace it just because a new message was produced — only when the step genuinely calls for a different picture.
+- Allowed "visual" shapes, exactly:
+  {"kind":"array","title":"optional","values":[1,2,3],"highlight":[0],"pointers":[{"index":0,"label":"L"}],"caption":"optional"}
+  {"kind":"key-value","title":"optional","entries":[{"key":"1","value":"3"}],"highlight":["1"],"caption":"optional"}
+  {"kind":"set","title":"optional","values":["a","b"],"highlight":["a"],"caption":"optional"}
+  {"kind":"diagram","title":"optional","nodes":[{"id":"browser","label":"Browser"}],"edges":[{"from":"browser","to":"route","label":"GET"}],"highlight":["route"],"caption":"optional"}
+- Pick the kind that best fits the idea: array for sequences and pointers, key-value for maps/dictionaries, set for unique collections, diagram for flows and relationships between things.
+- Keep visuals small: at most ~12 values/entries or ~10 nodes. Depict the step you are teaching right now, not the entire topic.
+- A visual is structured data only — never put code, HTML, SVG, styling or executable content inside it.
+- Do not force a visual when prose is clearer; null is always acceptable.`
 }
 `;
 }

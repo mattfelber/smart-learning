@@ -19,8 +19,11 @@ import {
   nextStep,
   findStep,
   conceptHasVisual,
-  DEFAULT_EXAMPLE
+  DEFAULT_EXAMPLE,
+  parseVisualSpec,
+  slidingWindowSpec
 } from '@smart-learning/shared';
+import type { VisualSpec } from '@smart-learning/shared';
 
 const TutorOutputSchema = z.object({
   message: z.string(),
@@ -41,7 +44,15 @@ const TutorOutputSchema = z.object({
       zeroCount: z.number().int()
     })
     .nullable()
-    .default(null)
+    .default(null),
+  // Model-authored visual for non-sliding-window concepts. Unknown here and
+  // validated against VisualSpecSchema later, so a malformed spec cannot sink
+  // the whole turn — it just degrades to a text-only reply.
+  visual: z.unknown().nullable().default(null),
+  // Whiteboard semantics: the panel persists across turns until the tutor
+  // explicitly replaces or clears it. Null falls back to "a present visual
+  // means replace, otherwise keep" for models that omit the field.
+  visualAction: z.enum(['keep', 'replace', 'clear']).nullable().default(null)
 });
 
 type TutorOutput = z.infer<typeof TutorOutputSchema>;
@@ -185,6 +196,13 @@ export class Tutor {
       ? `left=${visual.left}, right=${visual.right}, zeroCount=${visual.zeroCount}, best=[${visual.bestLeft},${visual.bestRight}], nums=[${DEFAULT_EXAMPLE.nums.join(',')}], k=${DEFAULT_EXAMPLE.k}`
       : null;
 
+    // Only a model-authored spec can carry forward; a sliding-window spec is
+    // rebuilt from the trace each turn and would be stale under a new concept.
+    const previousSpec =
+      session.visualState && session.visualState.kind !== 'sliding-window'
+        ? session.visualState
+        : undefined;
+
     const prompt = tutorPrompt({
       goal,
       mode: session.mode,
@@ -193,7 +211,8 @@ export class Tutor {
       recentMessages: session.messages,
       learnerInput,
       hintLevel: session.hintLevel,
-      currentVisualText
+      currentVisualText,
+      currentVisualSpec: previousSpec ? JSON.stringify(previousSpec) : null
     });
 
     const request = {
@@ -249,10 +268,26 @@ export class Tutor {
       session.visualStep = 0;
     }
 
-    const showVisual = conceptHasVisual(output.concept);
-    const newVisual = showVisual
-      ? stateFromTrace(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, session.visualStep)
-      : undefined;
+    // Sliding-window visuals are server-built from the trace each turn so the
+    // step stays authoritative. Every other concept works like a whiteboard:
+    // the previous spec persists unless the tutor replaces or clears it, and a
+    // malformed replacement is dropped without destroying the previous visual.
+    let newVisual: VisualSpec | undefined;
+    if (conceptHasVisual(output.concept)) {
+      newVisual = slidingWindowSpec(
+        stateFromTrace(DEFAULT_EXAMPLE.nums, DEFAULT_EXAMPLE.k, session.visualStep)
+      );
+    } else if (output.visualAction === 'clear') {
+      newVisual = undefined;
+    } else if (output.visualAction === 'keep') {
+      newVisual = previousSpec;
+    } else {
+      const candidate = parseVisualSpec(output.visual);
+      if (output.visual != null && candidate === undefined) {
+        console.warn('[tutor] model emitted a visual that failed validation; keeping previous');
+      }
+      newVisual = candidate ?? previousSpec;
+    }
     session.visualState = newVisual;
 
     this.updateConcept(topic, concept, conceptState, output, learnerInput);
@@ -399,7 +434,9 @@ export class Tutor {
       advanceVisual: false,
       needsHint: false,
       nextReview: null,
-      window: null
+      window: null,
+      visual: null,
+      visualAction: null
     };
   }
 }
