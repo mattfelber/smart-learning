@@ -26,22 +26,29 @@ npm run dev
 Sliding window algorithms for coding interviews
 ```
 
-## What works in V1
+## What works
 
 - New-topic creation
 - Initial knowledge probing
 - Adaptive tutoring through a Tutor Orchestrator
+- Streaming tutor responses (SSE) with a live typing view
+- Learner control commands ("move on", "just tell me", "focus on interviews") handled without extra model calls, plus a probe budget so the tutor stops looping questions
 - Prediction-before-reveal prompts
 - Progressive hint ladder
 - Basic misconception tracking
 - Learner state persistence
-- Sliding-window interactive visualizer
+- AI-directed visuals: the tutor emits a structured `VisualSpec` (array, key-value, set, diagram) rendered by deterministic React components; sliding-window lessons still get the interactive step-scrubbed trace
+- Whiteboard continuity — visuals persist across turns until the tutor replaces or clears them
+- Topic/session vault to reopen past work
+- Per-request token usage and cost tracking
 - Session resume
 - Markdown session summary
 
 ## Architecture
 
 See `ARCHITECTURE.md`, `CONTEXT_STRATEGY.md`, `LEARNING_MODEL.md`, `MODEL_PROVIDERS.md`, and `DEVELOPMENT.md`.
+
+Mobile: `npm run dev` prints a QR code for the LAN address (vite-plugin-qrcode), so you can open the app on a phone.
 
 ## Data
 

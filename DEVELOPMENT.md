@@ -2,7 +2,7 @@
 
 ## Setup
 
-1. Copy `.env.example` to `.env` in the `server/` directory.
+1. Copy `.env.example` to `.env` in the project root (the config loader walks up from `server/`).
 2. Add your Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 3. Install dependencies:
 

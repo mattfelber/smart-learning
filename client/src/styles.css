@@ -634,6 +634,73 @@ kbd {
   }
 }
 
+/* Phones: tighten the chrome so chat and visual stay usable on a narrow screen. */
+@media (max-width: 640px) {
+  .shell {
+    padding: 0 8px;
+  }
+
+  .titlebar {
+    height: auto;
+    min-height: 42px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 2px;
+  }
+
+  .titlebar__right {
+    margin-left: auto;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .cmdbar {
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .cmdbar__input {
+    flex: 1 1 100%;
+  }
+
+  .cmdbar > .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 9px 10px;
+  }
+
+  .panel {
+    min-height: 0;
+    max-height: none;
+  }
+
+  /* The tape of cells should shrink rather than overflow. */
+  .tape {
+    gap: 5px;
+    padding: 20px 4px 26px;
+  }
+
+  .cell {
+    width: 34px;
+    height: 42px;
+    font-size: 13px;
+  }
+
+  .kv__row {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .statusbar {
+    gap: 10px;
+    font-size: 9.5px;
+  }
+
+  .statusbar__right {
+    display: none;
+  }
+}
+
 /* --- Status bar --- */
 
 .statusbar {

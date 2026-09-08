@@ -37,19 +37,18 @@ User -> React UI (Vite)
 ```
 client/          Vite + React frontend
 server/          Express + TypeScript backend
-shared/          Common types used by both client and server
-docs/            Architecture and context docs
-learning-data/   Generated learner state (gitignored)
+shared/          Common types + Zod VisualSpec schemas used by both
+learning-data/   Generated learner state (lives outside the repo by default)
 ```
 
 ## Provider Abstraction
 
 ```typescript
 interface LLMProvider {
-  generate(options: GenerateRequest): Promise<GenerateResponse>;
-  generateStructured<T>(options: GenerateRequest, schema: ZodSchema<T>): Promise<T>;
-  supportsVision(): boolean;
-  supportsTools(): boolean;
+  generate(req: GenerateRequest): Promise<GenerateResponse>;
+  /** Optional streaming; used by /api/chat/stream for live tutor output. */
+  generateStream?(req: GenerateRequest, onText: (textSoFar: string) => void): Promise<GenerateResponse>;
+  supportsJson(): boolean;
 }
 ```
 
@@ -65,7 +64,21 @@ The orchestrator maintains a `TutorState` machine:
 4. `PRACTICING` — independent problem with hint ladder.
 5. `REVIEWING` — summarize and schedule next review.
 
-Transitions are driven by the learner's last message, current concept, learner state, and a small LLM call.
+Transitions are driven by the learner's last message, current concept, learner state, and one LLM call per turn.
+
+## Learner Control
+
+`server/src/tutor/learnerControl.ts` detects control phrases deterministically — no extra LLM call:
+
+- **move-on** ("move on", "I already answered this", "skip this") — tutor advances and the concept is marked covered
+- **direct** ("just tell me", "idk", "what's the answer") — tutor answers directly instead of asking another question
+- **scope** ("focus on interviews", "don't go that deep") — depth is matched to the stated goal immediately
+
+Two compact session fields back this up: `probeCount` (resets when the concept changes; after ~3 unanswered probes the tutor is told to teach directly) and `coveredObjectives` (demonstrated concepts that must not be re-tested in a loop).
+
+## Streaming
+
+`POST /api/chat/stream` returns SSE: headers flush immediately, heartbeats keep the connection warm while the model thinks, `delta` events carry the `message` field extracted from the in-flight JSON, and `done` delivers the final `TutorResponse`. Each Gemini attempt is bounded by a first-token watchdog (`GEMINI_FIRST_TOKEN_TIMEOUT_MS`) and a request timeout (`GEMINI_REQUEST_TIMEOUT_MS`) before falling to the next model in `GEMINI_FALLBACKS`.
 
 ## Context Strategy
 
@@ -76,7 +89,9 @@ The prompt to the LLM always includes:
 - Recent 3-5 turns of conversation (compact)
 - Learner state summary for current concept
 - Active misconceptions
-- Current exercise / visual state
+- Concepts already covered this lesson (`coveredObjectives`) and probe budget
+- Learner directive, when a control phrase was detected ("move on", "just tell me", "focus on …")
+- Current visual: sliding-window trace state or the VisualSpec on the whiteboard
 - Instructions for the next expected interaction type
 
 It explicitly does **not** include:
@@ -84,7 +99,6 @@ It explicitly does **not** include:
 - Full previous sessions
 - All event logs
 - Unrelated topics
-- Giant visualization code
 - System debug logs
 
 See `CONTEXT_STRATEGY.md` for the exact template.
@@ -121,13 +135,19 @@ learning-data/
 
 ## Visualizer
 
-The Sliding-Window visualizer is a deterministic React component. It receives an `ArrayPointerVisual` state:
+Visuals are a discriminated union, `VisualSpec` (`shared/src/visualSpec.ts`), validated by Zod before reaching the client:
 
-- `nums`, `k`, `left`, `right`, `zeroCount`, `bestLeft`, `bestRight`, `phase`
+- `kind: 'array'` — values, highlighted indices, labelled pointers
+- `kind: 'key-value'` — key→value entries, highlighted keys
+- `kind: 'set'` — unique values, highlighted values
+- `kind: 'diagram'` — labelled nodes and directed edges (flows, request lifecycles)
+- `kind: 'sliding-window'` — server-built trace state (nums/k/left/right/zeroCount/best/phase) with the interactive step scrubber
 
-It renders an HTML/SVG array with pointers, window highlight, and counters. Controls: Next, Previous, Reset, Reveal.
+The model decides WHAT to show and emits structured data only — never markup or code. `Visualizer.tsx` dispatches on `kind` to a deterministic renderer in `client/src/components/visuals/`. New kinds = one schema + one renderer + one map entry.
 
-The Tutor can request a new visual state, but the renderer is deterministic code.
+The panel is a persistent whiteboard: the previous spec is sent back to the tutor each turn, and `visualAction` (`keep` / `replace` / `clear`) lets the model keep, evolve, or remove it. Malformed specs fall back to the previous visual.
+
+Sliding-window lessons are the exception: the tutor reports `window` (left/right/zeroCount), the server resolves the step via `findStep` and builds the spec from the deterministic trace — the model never authors it.
 
 ## Session Resume
 

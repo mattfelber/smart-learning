@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { qrcode } from 'vite-plugin-qrcode';
 import { fileURLToPath } from 'node:url';
 
 const sharedSrc = fileURLToPath(new URL('../shared/src/index.ts', import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), qrcode()],
 
   resolve: {
     alias: {
@@ -38,6 +39,8 @@ export default defineConfig({
   },
 
   server: {
+    // LAN access so the QR code the qrcode plugin prints is scannable from a phone.
+    host: true,
     port: 5173,
     proxy: {
       '/api': {

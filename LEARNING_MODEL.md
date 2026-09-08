@@ -47,6 +47,15 @@ Known sliding-window misconceptions:
 - Confuses current window size with maximum size
 - Fails to update zero_count when left passes a zero
 
+## Lesson-level control state
+
+Two compact fields on `SessionState` prevent Socratic loops without any extra model calls:
+
+- `probeCount` — unanswered probes spent on the current concept; resets when the concept changes. After ~3 the tutor is instructed to teach directly and advance.
+- `coveredObjectives` — concepts demonstrated (`correct: true`) or declined via "move on"; the tutor is told not to re-test them unless a misconception appears or the learner asks.
+
+Learner control phrases ("move on", "idk", "focus on interviews") are detected by deterministic text matching (`learnerControl.ts`) and injected into the prompt as a directive.
+
 ## Confidence
 
 Asked occasionally (not every turn). Interpreted as:
